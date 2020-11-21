@@ -1,0 +1,6 @@
+stamford_hill_survey*.zip
+stamford_hill_survey*.csv
+*.~
+*.bak
+*.pyc
+*.pyo
