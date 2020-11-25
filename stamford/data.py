@@ -79,7 +79,9 @@ def generate_graph(data, minimal=True):
         hhids[hhid] = True
 
         ## create a household node with attributes given by the row, verbatim
-        attrs = { "width": 5, "height": 5 } if minimal else _dependa(hh)
+        attrs = {} if minimal else _depanda(hh)
+        attrs["width"] = 5
+        attrs["height"] = 5
         g.add_node(hhid, kind="household", **attrs)
 
     ## we don't really care about 'stamford_hill_survey-hh_member_names_repeat.csv'
@@ -124,7 +126,9 @@ def generate_graph(data, minimal=True):
             continue
         hid = hhkeys[p["PARENT_KEY"]]
 
-        attrs = { "age": p["hh_member_age"], "sex": p["hh_member_sex"] } if minimal else _depanda(p)
+        attrs = {} if minimal else _depanda(p)
+        attrs["age"] = p["hh_member_age"]
+        attrs["sex"] = p["hh_member_sex"]
         attrs["width"] = 5*int(math.log(max(attrs["age"],2), 2))
         attrs["height"] = 5*int(math.log(max(attrs["age"],2), 2))
         g.add_node(pid, kind="person", **attrs)

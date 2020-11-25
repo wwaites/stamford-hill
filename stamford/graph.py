@@ -3,7 +3,10 @@ import networkx as nx
 from networkx.algorithms import isomorphism
 import sys
 import numpy as np
+import logging
 from stamford.data import read_data, generate_graph
+
+log = logging.getLogger(__name__)
 
 def nodes_by_kind(g, kind):
     return [n for (n,k) in nx.get_node_attributes(g, "kind").items() if k == kind]
@@ -19,6 +22,13 @@ def mikvahs(g):
     return nodes_by_kind(g, "mikvah")
 def places(g):
     return { "shul": shuls(g), "yeshiva": yeshivas(g), "mikvah": mikvahs(g) }
+def members(g, hh):
+    """
+    returns household members sorted by descending age and sex.
+    """
+    ages  = nx.get_node_attributes(g, "age")
+    sexes = nx.get_node_attributes(g, "sex")
+    return sorted(nx.neighbors(g, hh), key=lambda m: (-ages[m], 0 if sexes[m] == "male" else 1))
 
 def household_graphs(g):
     i = 0 ## counter for synthetic shuls, yeshivas, mikvahs, etc
@@ -76,11 +86,12 @@ def degrees(g):
 def command():
     parser = argparse.ArgumentParser("stamford_graph")
     parser.add_argument("survey", help="Data file (.zip) containing survey data downloaded from ODK")
+    parser.add_argument("--maximal", action="store_true", default=False, help="Do not minimise output; store all annotations in the graph")
     parser.add_argument("--motifs", "-m", action="store_true", default=False, help="Generate a graph of household motifs")
     args = parser.parse_args()
 
     data = read_data(args.survey)
-    g = generate_graph(data)
+    g = generate_graph(data, minimal=not args.maximal)
 
     if args.motifs:
         g = household_motifs(g)
