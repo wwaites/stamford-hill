@@ -70,6 +70,7 @@ def command():
     labels = ["{}-{}".format(5*age, 5*age+4) for age in x]
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation="vertical")
+    [ax.text(age-0.15, 2.5, "n = {}".format(len(scount.get(age, []))), rotation="vertical") for age in x]
     fig.savefig("age-reporting-symptoms.png")
 
     cdate = {}
