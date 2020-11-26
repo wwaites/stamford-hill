@@ -73,8 +73,56 @@ def command():
     [ax.text(age-0.15, 2.5, "n = {}".format(len(scount.get(age, []))), rotation="vertical") for age in x]
     fig.savefig("age-reporting-symptoms.png")
 
-    cdate = {}
+    ccount = {}
     dates = nx.get_node_attributes(g, "dates.covid")
+    for p in graph.people(g):
+        band = ccount.setdefault(int(ages[p]/5), [])
+        cov = dates.get(p)
+        if isinstance(cov, str):
+            band.append(True)
+        else:
+            band.append(False)
+
+    fig, ax = plt.subplots(1,1, figsize=(12,6))
+    fig.suptitle("Percentage of individuals by age reporting COVID-19 infection dates")
+    x = list(range(max(ccount.keys())+1))
+    y = [int(100*sum(ccount.get(age, []))/len(ccount.get(age, [False]))) for age in x]
+    ax.bar(x, y)
+    labels = ["{}-{}".format(5*age, 5*age+4) for age in x]
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation="vertical")
+    [ax.text(age-0.15, 2.5, "n = {}".format(len(ccount.get(age, []))), rotation="vertical") for age in x]
+    fig.savefig("age-reporting-covid.png")
+
+    tcount = {}
+    swabs = nx.get_node_attributes(g, "swab.test.result")
+    swabscreens = nx.get_node_attributes(g, "swab.test.screening.result")
+    seros = nx.get_node_attributes(g, "serology.test.result")
+    seroscreens = nx.get_node_attributes(g, "serology.test.screening.result")
+    for p in graph.people(g):
+        band = tcount.setdefault(int(ages[p]/5), [])
+        positive = False
+        for d in (swabs, swabscreens, seros, seroscreens):
+            result = d.get(p)
+            if isinstance(result, str) and result =="positive":
+                positive = True
+        if positive:
+            band.append(True)
+        else:
+            band.append(False)
+
+    fig, ax = plt.subplots(1,1, figsize=(12,6))
+    fig.suptitle("Percentage of individuals by age with a positive COVID-19 test result")
+    x = list(range(max(tcount.keys())+1))
+    y = [int(100*sum(tcount.get(age, []))/len(tcount.get(age, [False]))) for age in x]
+    ax.bar(x, y)
+    labels = ["{}-{}".format(5*age, 5*age+4) for age in x]
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation="vertical")
+    [ax.text(age-0.15, 2.5, "n = {}".format(len(tcount.get(age, []))), rotation="vertical") for age in x]
+    fig.savefig("age-test-covid.png")
+
+    cdate = {}
     for p in graph.people(g):
         dc = dates.get(p)
         if isinstance(dc, str):
