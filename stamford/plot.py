@@ -2,8 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
 from stamford import graph
+from stamford.colours import LSHTM_COLOURS
 import argparse
 
+colours = list(LSHTM_COLOURS.values())
 
 def command():
     parser = argparse.ArgumentParser("stamford_plot")
@@ -14,22 +16,25 @@ def command():
 
     hh_degs, shul_degs, yeshiva_degs, mikvah_degs = graph.degrees(g)
 
-    fig, ax = plt.subplots(2,2, figsize=(10,10))
+    fig, ax = plt.subplots(2,2, figsize=(12,6))
 
-    fig.suptitle("Population distributions in various settings")
-    ax[0][0].hist(hh_degs, density=False)
+#    fig.suptitle("Population distributions in various settings")
+    ax[0][0].hist(hh_degs, bins=np.linspace(1,15,15)-0.5, density=False, rwidth=0.9, color=colours[2])
     ax[0][0].set_ylabel("Households (total {})".format(len(graph.households(g))))
     ax[0][0].set_xlabel("Size")
-    ax[0][1].hist(shul_degs, density=False)
+    ax[0][1].hist(shul_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
     ax[0][1].set_ylabel("Shuls (total {})".format(len(graph.shuls(g))))
     ax[0][1].set_xlabel("Size")
-    ax[1][0].hist(yeshiva_degs, density=False)
-    ax[1][0].set_ylabel("Yeshivas (total {})".format(len(graph.yeshivas(g))))
+    ax[1][0].hist(yeshiva_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[1][0].set_ylabel("Yeshivot (total {})".format(len(graph.yeshivas(g))))
     ax[1][0].set_xlabel("Size")
-    ax[1][1].hist(mikvah_degs, density=False)
-    ax[1][1].set_ylabel("Mikvahs (total {})".format(len(graph.mikvahs(g))))
+    ax[1][1].hist(mikvah_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[1][1].set_ylabel("Mikvot (total {})".format(len(graph.mikvahs(g))))
     ax[1][1].set_xlabel("Size")
+    ax[1][1].set_ylim((0,18))
+    ax[1][1].set_yticks([2*y for y in range(10)])
 
+    fig.tight_layout()
     fig.savefig("degree-distributions.png")
 
     # shul_yeshivas = graph.correlations(g)
@@ -71,6 +76,8 @@ def command():
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation="vertical")
     [ax.text(age-0.15, 2.5, "n = {}".format(len(scount.get(age, []))), rotation="vertical") for age in x]
+
+    fig.tight_layout()
     fig.savefig("age-reporting-symptoms.png")
 
     ccount = {}
@@ -92,6 +99,8 @@ def command():
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation="vertical")
     [ax.text(age-0.15, 2.5, "n = {}".format(len(ccount.get(age, []))), rotation="vertical") for age in x]
+
+    fig.tight_layout()
     fig.savefig("age-reporting-covid.png")
 
     tcount = {}
@@ -120,6 +129,8 @@ def command():
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation="vertical")
     [ax.text(age-0.15, 2.5, "n = {}".format(len(tcount.get(age, []))), rotation="vertical") for age in x]
+
+    fig.tight_layout()
     fig.savefig("age-test-covid.png")
 
     cdate = {}
@@ -138,13 +149,15 @@ def command():
         curve[2*months[month] + half] = c
 
     fig, ax = plt.subplots(1,1, figsize=(12,6))
-    fig.suptitle("Self-reported COVID-19 cases")
-    ax.bar(range(len(curve)), curve)
+#    fig.suptitle("Self-reported COVID-19 cases")
+    ax.bar(range(len(curve)), curve, color=colours[1])
     ticks = range(len(curve))
     labels = ["{} {}".format(h, m) for m in months for h in ["Early", "Late"]]
     ax.set_xticks(ticks)
     ax.set_xticklabels(labels, rotation="vertical")
     plt.subplots_adjust(bottom=0.15)
+
+    fig.tight_layout()
     fig.savefig("self-reported-curve.png")
 
 if __name__ == '__main__':

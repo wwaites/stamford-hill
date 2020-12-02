@@ -30,13 +30,18 @@ setup(name='stamford',
       packages=find_packages(),
       install_requires=[
           'matplotlib',
+          'multiset',
           'networkx',
+          'numba',
           'pandas',
+          'tqdm',
+          'scipy'
       ],
       python_requires='>=3.1.*',
       entry_points={
           'console_scripts': [
               'stamford_graph = stamford.graph:command',
+              'stamford_house = stamford.house:command',
               'stamford_plot = stamford.plot:command',
           ],
       },

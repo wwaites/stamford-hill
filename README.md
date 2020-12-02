@@ -45,6 +45,7 @@ is done as follows:
 
     conda create -n stamford python=3
     conda activate stamford
+    conda install numba networkx scipy matplotlib pandas
     python setup.py develop
 
 now the programs written in python will be in your shell's search path and you
@@ -54,13 +55,14 @@ will simply be able to run them.
 
 ### stamford_graph
 
-    usage: stamford_graph [-h] [--motifs] survey
+    usage: stamford_graph [-h] [--maximal] [--motifs] survey
 
     positional arguments:
       survey        Data file (.zip) containing survey data downloaded from ODK
 
     optional arguments:
       -h, --help    show this help message and exit
+      --maximal     Do not minimise output; store all annotations in the graph
       --motifs, -m  Generate a graph of household motifs
 
 Run this program like this:
@@ -73,14 +75,32 @@ household motifs for each household pattern that appears more than once in the
 data.
 
 ### stamford_plot
-
-    usage: stamford_graph [-h] survey
+    usage: stamford_plot [-h] graph
 
     positional arguments:
-      survey      Data file (.zip) containing survey data downloaded from ODK
+      graph       Sampled population graph
 
     optional arguments:
       -h, --help  show this help message and exit
 
 This program writes histograms for the numbers of households, shuls, yeshivas
 and mikvas that associated with a given number of people.
+
+### stamford_house
+
+    usage: stamford_house [-h] [--nrestarts NRESTARTS] [--seed SEED] [--lower LOWER] [--upper UPPER] graph
+    
+    positional arguments:
+      graph                 GraphML file containing network
+    
+    optional arguments:
+      -h, --help            show this help message and exit
+      --nrestarts NRESTARTS
+                            Number of times to run the fitting process
+      --seed SEED           Random seed
+      --lower LOWER         Lower age cutoff
+      --upper UPPER         Upper age cutoff
+
+This program fits a household transmission model to the cases present in the
+graph. It estimates the baseline transmission probability in households as
+well as the degree of over- or under-influence of a particular age band.
