@@ -34,7 +34,7 @@ setup(name='stamford',
           'networkx',
           'numba',
           'pandas',
-          'tqdm',
+          'pyabc',
           'scipy'
       ],
       python_requires='>=3.1.*',
