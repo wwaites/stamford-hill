@@ -31,6 +31,7 @@ setup(name='stamford',
       install_requires=[
           'matplotlib',
           'multiset',
+          'netabc',
           'networkx',
           'numba',
           'pandas',
@@ -43,5 +44,7 @@ setup(name='stamford',
               'stamford_house = stamford.house:command',
               'stamford_plot = stamford.plot:command',
           ],
+          'network_generators':
+          [ 'stamford_graph = stamford.network:build_graph' ]
       },
 )
