@@ -24,10 +24,6 @@ import sys
 import pathlib
 import argparse
 import logging
-from pyabc import Distribution, RV, ABCSMC
-from pyabc.populationstrategy import AdaptivePopulationSize
-from pyabc.sampler import SingleCoreSampler
-from pyabc.weighted_statistics import weighted_mean, weighted_std
 from stamford.graph import households, members
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -233,39 +229,24 @@ def optimise_gradient_descent(x0, bb, Y, XX, feature, nrestarts):
 
     return xhat
 
-class HouseModel(object):
-    __name__ = "Household transmission"
-    def __init__(self, Y, XX, feature, priors):
-        self.Y = Y
-        self.XX = XX
-        self.feature = feature
-        self.priors = priors
-    def __call__(self, params):
-        x = np.array([ params[p] for p in self.priors ])
-        try:
-            ll = mynll(x, self.Y, self.XX, self.feature.size)
-        except Exception as e:
-            ll = np.inf
-#        log.info(f"{params}: {ll}")
-        return { "ll": ll if not np.isnan(ll) else np.inf }
-
 def command():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--optimise", default="abc", choices=["abc", "tnc"], help="Optimisation strategy to use")
     parser.add_argument("--nrestarts", type=int, default=1, help="Number of times to run the fitting process")
     parser.add_argument("--lower", type=int, default=13, help="Lower age cutoff")
     parser.add_argument("--upper", type=int, default=30, help="Upper age cutoff")
-    parser.add_argument("--db", default="sqlite:///abc.db", help="Database for ABC history")
-    parser.add_argument("--eps", default=0.0, type=float, help="Minimum epsilon value to stop ABC")
     parser.add_argument("graph", help="GraphML file containing network")
 
     args = parser.parse_args()
 
     feature=feature_age_band
     fargs={"band": (args.lower, args.upper) }
-    log.info(f"Reading graph data from {args.graph}")
+    log.info(f"Reading population graph from {args.graph}")
     Y, XX = read_graph_data(args.graph, feature, **fargs)
     log.info(f"Done.")
+    num_households = len(Y)
+
+    # Indicative parameters - to do, add bounds and mulitple restarts
+    x0 = np.zeros(7)
 
     ## bounds for the optimization. the x is constrained to remain
     ## within these ranges.
@@ -280,36 +261,6 @@ def command():
             [-3.0, 3.0],
         ]
     )
-
-    if args.optimise == "abc":
-        prior_names = \
-            [ "llaL", "llaG", "logtheta", "eta" ] + \
-            [ f"alpha{i}" for i in range(feature.size) ] + \
-            [ f"beta{i}"  for i in range(feature.size) ] + \
-            [ f"gamma{i}" for i in range(feature.size) ]
-        ## for some odd reason the uniform distribution is not specified by
-        ## endpoints, but by minimum and width
-        priors = dict((n, RV("uniform", bb[i][0], bb[i][1]-bb[i][0])) for i, n in enumerate(prior_names))
-        prior = Distribution(priors)
-        m = HouseModel(Y, XX, feature, prior_names)
-        abc = ABCSMC(m, prior,
-                     distance_function=lambda x, _: x["ll"],
-                     sampler=SingleCoreSampler(),
-                     population_size=AdaptivePopulationSize(100, 0.15, min_population_size=10))
-        abc_id = abc.new(args.db)
-        history = abc.run(minimum_epsilon=args.eps, max_nr_populations=15)
-
-        df, w = history.get_distribution()
-        params = list(df.keys())
-        for t in range(0, history.n_populations):
-            df, w = history.get_distribution(t=t)
-            if len(w) == 0: continue
-            for p in params:
-                log.info("{} t={}\t{} (stddev = {})".format(p, t, weighted_mean(df[p], w), weighted_std(df[p], w)))
-        sys.exit(0)
-
-    # Indicative parameters - to do, add bounds and mulitple restarts
-    x0 = np.zeros(7)
 
     xhat = optimise_gradient_descent(x0, bb, Y, XX, feature, args.nrestarts)
     log.info("xhat = {}".format(xhat))
