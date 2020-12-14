@@ -168,5 +168,42 @@ def command():
     fig.tight_layout()
     fig.savefig("self-reported-curve.png")
 
+    symptoms = set()
+    for syms in nx.get_node_attributes(g, "symptoms").values():
+        if not isinstance(syms, str):
+            continue
+        for sym in syms.split(" "):
+            symptoms.add(sym)
+    for sym in symptoms:
+        cdate = {}
+        for p in graph.people(g):
+            s = g.nodes[p]["symptoms"]
+            if not isinstance(s, str) or sym not in s:
+                continue
+            dc = dates.get(p)
+            if isinstance(dc, str):
+                for d in dc.split(" "):
+                    count = cdate.get(d, 0)
+                    cdate[d] = count + 1
+
+        months = dict((m, i) for (i, m) in enumerate(["Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov"]))
+        curve = np.zeros(len(months)*2)
+        for d, c in cdate.items():
+            half, month = d.split(".")
+            half = 0 if half == "Early" else 1
+            curve[2*months[month] + half] = c
+
+        fig, ax = plt.subplots(1,1, figsize=(12,6))
+        fig.suptitle(f"Symptoms by date: {sym}")
+        ax.bar(range(len(curve)), curve, color=colours[1])
+        ticks = range(len(curve))
+        labels = ["{} {}".format(h, m) for m in months for h in ["Early", "Late"]]
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(labels, rotation="vertical")
+        plt.subplots_adjust(bottom=0.15)
+
+        fig.tight_layout()
+        fig.savefig(f"symptoms-{sym}.png")
+
 if __name__ == '__main__':
     command()
