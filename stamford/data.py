@@ -48,7 +48,7 @@ def generate_graph(data, minimal=True):
 
     ## keep track of household key -> household id
     hhkeys = {}
-    hhids  = {}
+    hhids = {}
 
     ## XXX don't like hard-coding the file name here, must thing of better way
     for hh in data['stamford_hill_survey.csv'].iloc:
@@ -69,20 +69,17 @@ def generate_graph(data, minimal=True):
             log.warn("Household record {} has invalid household.id".format(hhkey))
             continue
 
-        hhid = "H%d" % hhid
-
         if hhid in hhids:
             log.warn("Duplicate household id {}".format(hhid))
-            continue
 
-        hhkeys[hhkey] = hhid
         hhids[hhid] = True
+        hhkeys[hhkey] = hhid
 
         ## create a household node with attributes given by the row, verbatim
         attrs = {} if minimal else _depanda(hh)
         attrs["width"] = 5
         attrs["height"] = 5
-        g.add_node(hhid, kind="household", **attrs)
+        g.add_node(hhkey, kind="household", **attrs)
 
     ## we don't really care about 'stamford_hill_survey-hh_member_names_repeat.csv'
     ## because the names are repeated in member_info.
@@ -139,4 +136,36 @@ def generate_graph(data, minimal=True):
         _add_place(p, pid, "shul-shul.define")
         _add_place(p, pid, "mikveh-mikveh.define")
 
+    return g
+
+def augment_graph(g, datafile):
+    """
+    Augment the graph with the combined serology data
+    """
+    df = pd.read_csv(datafile)
+    fields = ["spike_pos", "spike_pos2", "swab_POS", "serology_POS", "RBD_pos", "NC_pos",
+              "SARS_S", "CoV2_N", "CoV_2_NTD", "CoV_2_RBD", "CoV_2_S", "X229Es", "HKU1S", "HL63s",
+              "OC43S"]
+
+    df = df[df["GOTSERUM"] == 1]
+    for row in df.iloc:
+        pid = row["person_ID"]
+        if pid not in g.nodes:
+            log.warn(f"Person {pid} not in graph")
+            continue
+        for field in fields:
+            v = row[field]
+            if isinstance(v, str):
+                try:
+                    v = np.float64(v)
+                except ValueError:
+                    log.warn(f"Weird value for Person {pid} field {field}: {v}")
+                    continue
+            if np.isnan(v):
+                continue
+            if field.endswith("_POS"):
+                field = field.lower()
+            elif field.startswith("CoV_2_"):
+                field = "CoV2_" + field[5:]
+            g.nodes[pid][field] = v
     return g

@@ -4,7 +4,7 @@ from networkx.algorithms import isomorphism
 import sys
 import numpy as np
 import logging
-from stamford.data import read_data, generate_graph
+from stamford.data import read_data, augment_graph, generate_graph
 
 log = logging.getLogger(__name__)
 
@@ -86,12 +86,16 @@ def degrees(g):
 def command():
     parser = argparse.ArgumentParser("stamford_graph")
     parser.add_argument("survey", help="Data file (.zip) containing survey data downloaded from ODK")
+    parser.add_argument("--augment", "-a", help="Augment graph with serology data (implies --maximal)")
     parser.add_argument("--maximal", action="store_true", default=False, help="Do not minimise output; store all annotations in the graph")
     parser.add_argument("--motifs", "-m", action="store_true", default=False, help="Generate a graph of household motifs")
     args = parser.parse_args()
 
+    if args.augment is not None:
+        args.maximal = True
     data = read_data(args.survey)
     g = generate_graph(data, minimal=not args.maximal)
+    g = augment_graph(g, args.augment)
 
     if args.motifs:
         g = household_motifs(g)
