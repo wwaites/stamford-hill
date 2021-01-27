@@ -79,7 +79,7 @@ def generate_graph(data, minimal=True):
         attrs = {} if minimal else _depanda(hh)
         attrs["width"] = 5
         attrs["height"] = 5
-        g.add_node(hhkey, kind="household", **attrs)
+        g.add_node(hhkey, type="household", bipartite=1, **attrs)
 
     ## we don't really care about 'stamford_hill_survey-hh_member_names_repeat.csv'
     ## because the names are repeated in member_info.
@@ -105,7 +105,7 @@ def generate_graph(data, minimal=True):
                         size = 30
                     else:
                         raise ValueError("Person {} has unknown kind of place {}".format(p["KEY"], place))
-                    g.add_node(place, kind=kind, weight=10, width=size, height=size)
+                    g.add_node(place, type=kind, weight=10, width=size, height=size, bipartite=1)
                 g.add_edge(pid, place)
 
 
@@ -121,15 +121,15 @@ def generate_graph(data, minimal=True):
         if p["PARENT_KEY"] not in hhkeys:
             log.warn("Person {} belongs to nonexistent household {}".format(p["person_ID"], p["PARENT_KEY"]))
             continue
-        hid = hhkeys[p["PARENT_KEY"]]
+        hhkey = p["PARENT_KEY"]
 
         attrs = {} if minimal else _depanda(p)
         attrs["age"] = p["hh_member_age"]
         attrs["sex"] = p["hh_member_sex"]
         attrs["width"] = 5*int(math.log(max(attrs["age"],2), 2))
         attrs["height"] = 5*int(math.log(max(attrs["age"],2), 2))
-        g.add_node(pid, kind="person", **attrs)
-        g.add_edge(pid, hid, weight=1)
+        g.add_node(pid, type="person", bipartite=0, **attrs)
+        g.add_edge(pid, hhkey, weight=1)
 
         _add_place(p, pid, "school.define")
         _add_place(p, pid, "yeshiva.define")
@@ -145,7 +145,7 @@ def augment_graph(g, datafile):
     df = pd.read_csv(datafile)
     fields = ["spike_pos", "spike_pos2", "swab_POS", "serology_POS", "RBD_pos", "NC_pos",
               "SARS_S", "CoV2_N", "CoV_2_NTD", "CoV_2_RBD", "CoV_2_S", "X229Es", "HKU1S", "HL63s",
-              "OC43S"]
+              "OC43S", "enriched"]
 
     df = df[df["GOTSERUM"] == 1]
     for row in df.iloc:
@@ -153,8 +153,22 @@ def augment_graph(g, datafile):
         if pid not in g.nodes:
             log.warn(f"Person {pid} not in graph")
             continue
+
         for field in fields:
             v = row[field]
+
+            if field == "enriched":
+                if v == "RANDOM":
+                    v=False
+                elif v == "ENRICHED":
+                    v=True
+                else:
+                    log.warn(f"Weird value for Person {pid} field {field}: {v}")
+                    continue
+                parent = g.nodes[pid]["PARENT_KEY"]
+                g.nodes[parent]["enriched"] = v
+                continue
+
             if isinstance(v, str):
                 try:
                     v = np.float64(v)
