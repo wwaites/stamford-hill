@@ -29,6 +29,7 @@ setup(name='stamford',
       license='GPLv3',
       packages=find_packages(),
       install_requires=[
+          'click',
           'matplotlib',
           'multiset',
           'netabc',
@@ -44,7 +45,14 @@ setup(name='stamford',
               'stamford_house = stamford.house:command',
               'stamford_plot = stamford.plot:command',
           ],
-          'network_generators':
-          [ 'stamford_graph = stamford.network:build_graph' ]
+          'network_generators': [
+              'stamford_graph = stamford.network:build_graph'
+          ],
+          'netkappa_functions': [
+              'sar = stamford.network:sar'
+          ],
+          'netabc_commands': [
+              'stamford  = stamford.network:command',
+          ],
       },
 )
