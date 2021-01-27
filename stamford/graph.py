@@ -8,18 +8,18 @@ from stamford.data import read_data, augment_graph, generate_graph
 
 log = logging.getLogger(__name__)
 
-def nodes_by_kind(g, kind):
-    return [n for (n,k) in nx.get_node_attributes(g, "kind").items() if k == kind]
+def nodes_by_type(g, type):
+    return [n for (n,k) in nx.get_node_attributes(g, "type").items() if k == type]
 def households(g):
-    return nodes_by_kind(g, "household")
+    return nodes_by_type(g, "household")
 def people(g):
-    return nodes_by_kind(g, "person")
+    return nodes_by_type(g, "person")
 def shuls(g):
-    return nodes_by_kind(g, "shul")
+    return nodes_by_type(g, "shul")
 def yeshivas(g):
-    return nodes_by_kind(g, "yeshiva")
+    return nodes_by_type(g, "yeshiva")
 def mikvahs(g):
-    return nodes_by_kind(g, "mikvah")
+    return nodes_by_type(g, "mikvah")
 def places(g):
     return { "shul": shuls(g), "yeshiva": yeshivas(g), "mikvah": mikvahs(g) }
 def members(g, hh):
@@ -38,19 +38,19 @@ def household_graphs(g):
     sexes = nx.get_node_attributes(g, "sex")
     for hh in households(g):
         hhg = nx.Graph()
-        hhg.add_node(hh, kind="household")
+        hhg.add_node(hh, type="household")
         hangouts = {}
         for m in nx.neighbors(g, hh): ## first find the people of the household
-            hhg.add_node(m, kind="person", sex=sexes[m])
+            hhg.add_node(m, type="person", sex=sexes[m])
             hhg.add_edge(m, hh)
             for p in nx.neighbors(g, m): ## next find the places that person hangs out in
                 size = nx.degree(g, p)  ## hoe big is the place
-                for kind in pl: ## figure out what kind of place it is
-                    if p in pl[kind]:
+                for type in pl: ## figure out what type of place it is
+                    if p in pl[type]:
                         if p not in hangouts: ## need to mint a new place
                             i += 1
                             hangouts[p] = i
-                            hhg.add_node(i, kind=kind)
+                            hhg.add_node(i, type=type)
                         hhg.add_edge(m, hangouts[p])
         graphs.append(hhg)
     return graphs
@@ -95,7 +95,8 @@ def command():
         args.maximal = True
     data = read_data(args.survey)
     g = generate_graph(data, minimal=not args.maximal)
-    g = augment_graph(g, args.augment)
+    if args.augment is not None:
+        g = augment_graph(g, args.augment)
 
     if args.motifs:
         g = household_motifs(g)
