@@ -7,12 +7,74 @@ import argparse
 
 colours = list(LSHTM_COLOURS.values())
 
+def household_distributions(g):
+    degs = {}
+    pos = {}
+    for h in graph.households(g):
+        if "enriched" not in g.nodes[h]:
+            print(f"household {h} is neither random nor enriched")
+            continue
+        if g.nodes[h]["enriched"]:
+            print(f"skipping enriched household {h}")
+            continue
+        else:
+            print(f"using random household {h}")
+        members = list(nx.neighbors(g,h))
+        sero = False
+        spike = 0
+        for m in members:
+            s = g.nodes[m].get("spike_pos")
+            if s is None:
+                continue
+            sero = True
+            if s == 1.0:
+                spike += 1
+        if sero:
+            degs[h] = len(members)
+            pos[h] = spike
+
+    subplots = {}
+    for h, d in degs.items():
+        p = pos[h]
+        if d > 10:
+            d = 10
+        if p > 10:
+            p = 10
+        subplots.setdefault(d, []).append(p)
+
+    attacks = {}
+    for d in sorted(subplots):
+        dens, cases = np.histogram(subplots[d], bins=np.linspace(0,10,12), density=True)
+        ar = sum(dens*cases[:11])/d
+        attacks[d] = ar
+        print(f"size {d}: n = {len(subplots[d])} attack rate = {ar}")
+    fig, axes = plt.subplots(2,5, figsize=(10,5))
+    for i in range(10):
+        ax = axes[int(i/5)][i%5]
+        ax.hist(subplots[i+1], bins=np.linspace(0,10,11)-0.5, rwidth=0.9, density=False)
+        if i == 9:
+            ax.set_title(f"size $\geq$ {i+1}, AR $\geq$ {100*attacks[i+1]:.0f}%")
+        else:
+            ax.set_title(f"size = {i+1}, AR $\geq$ {100*attacks[i+1]:.0f}%")
+#        ax.set_ylim(0,0.6)
+
+    for i in range(2):
+        ax = axes[i][0]
+        ax.set_ylabel("Number of households")
+    for i in range(5):
+        ax = axes[1][i]
+        ax.set_xlabel("Number of infections")
+    fig.tight_layout()
+    fig.savefig("houshold-distributions.png")
+
 def command():
     parser = argparse.ArgumentParser("stamford_plot")
     parser.add_argument("graph", help="Sampled population graph")
     args = parser.parse_args()
 
     g = nx.read_graphml(args.graph)
+
+    household_distributions(g)
 
     hh_degs, shul_degs, yeshiva_degs, mikvah_degs = graph.degrees(g)
 
