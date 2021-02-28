@@ -1,0 +1,55 @@
+// -*- mode: kappa -*-
+
+// rate of progression from exposed to infectious
+%var:   alpha   0.2
+// rate of recovery or removal
+%var:   gamma   0.15
+
+// a person with a disease progression state, and a site
+// representing the location of interactions
+%agent: person(c{s e i r}, loc)
+
+// a bipartite graph is externally supplied, but we give it
+// a name here. people are in one partition, places are in
+// the other
+%graph: g
+
+// standard rules for disease progression
+'progression' person(c{e}) -> person(c{i}) @ alpha
+'removal'     person(c{i}) -> person(c{r}) @ gamma
+
+// places partition the population. assume that interaction
+// within each partition is well-mixed.
+//
+// read these rules as, two people, one susceptible and one
+// infectious that are both connected to the same place
+// (household, shul, yeshiva, mikvah) results in the susceptible
+// one becoming exposed at rate inversely proportional to the
+// size of the place.
+//
+// the transmission probabilities per unit time for each place
+// beta_h, beta_s, beta_y and beta_m, are supplied separately
+// because we allow them to vary for fitting
+'infection_household' person(c{i}, loc[household]), person(c{s}, loc[household]) \
+                   -> person(c{i}, loc[household]), person(c{e}, loc[household]) @ beta_h/sizeof(g, household)
+
+'infection_shul' person(c{i}, loc[shul]), person(c{s}, loc[shul]) \
+              -> person(c{i}, loc[shul]), person(c{e}, loc[shul]) @ beta_s/sizeof(g, shul)
+
+'infection_yeshiva' person(c{i}, loc[yeshiva]), person(c{s}, loc[yeshiva]) \
+                 -> person(c{i}, loc[yeshiva]), person(c{e}, loc[yeshiva]) @ beta_y/sizeof(g, yeshiva)
+
+'infection_mikvah' person(c{i}, loc[mikvah]), person(c{s}, loc[mikvah]) \
+                -> person(c{i}, loc[mikvah]), person(c{e}, loc[mikvah]) @ beta_m/sizeof(g, mikvah)
+
+%obs: S |person(c{s})|
+%obs: E |person(c{e})|
+%obs: I |person(c{i})|
+%obs: R |person(c{r})|
+%obs: P |person()|
+
+// unlike regular kappa, these values are the fraction of the
+// nodes in the supplied graph that should have their initial
+// states set according to this specification
+%init: 0.99 person(c{s})
+%init: 0.01 person(c{i})
