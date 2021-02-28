@@ -14,14 +14,25 @@ def households(g):
     return nodes_by_type(g, "household")
 def people(g):
     return nodes_by_type(g, "person")
-def shuls(g):
-    return nodes_by_type(g, "shul")
-def yeshivas(g):
+def synagogues(g):
+    return nodes_by_type(g, "synagogues")
+def yeshivot(g):
     return nodes_by_type(g, "yeshiva")
+def schools(g):
+    return nodes_by_type(g, "school")
 def mikvahs(g):
     return nodes_by_type(g, "mikvah")
+def household(g, p):
+    for n in nx.neighbors(g, p):
+        if g.nodes[n]["type"] == "household":
+            return n
+
 def places(g):
-    return { "shul": shuls(g), "yeshiva": yeshivas(g), "mikvah": mikvahs(g) }
+    return { "synagogue": synagogues(g),
+             "school": schools(g),
+             "yeshivot": yeshivot(g),
+             "mikvah": mikvahs(g) }
+
 def members(g, hh):
     """
     returns household members sorted by descending age and sex.
@@ -86,17 +97,14 @@ def degrees(g):
 def command():
     parser = argparse.ArgumentParser("stamford_graph")
     parser.add_argument("survey", help="Data file (.zip) containing survey data downloaded from ODK")
-    parser.add_argument("--augment", "-a", help="Augment graph with serology data (implies --maximal)")
+    parser.add_argument("augment", help="Augment graph with serology data")
     parser.add_argument("--maximal", action="store_true", default=False, help="Do not minimise output; store all annotations in the graph")
     parser.add_argument("--motifs", "-m", action="store_true", default=False, help="Generate a graph of household motifs")
     args = parser.parse_args()
 
-    if args.augment is not None:
-        args.maximal = True
     data = read_data(args.survey)
     g = generate_graph(data, minimal=not args.maximal)
-    if args.augment is not None:
-        g = augment_graph(g, args.augment)
+    g = augment_graph(g, args.augment, minimal=not args.maximal)
 
     if args.motifs:
         g = household_motifs(g)

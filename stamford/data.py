@@ -10,8 +10,25 @@ log = logging.getLogger("__name__")
 
 ## constants for validation
 SURVEY_START = dt.datetime(2020, 10, 19, 0, 0, 0, 0, dt.timezone.utc)
-MIN_HHID = 0
-MAX_HHID = 20000
+MIN_HHID     = 0
+MAX_HHID     = 20000
+N_HOUSEHOLDS = 374
+N_SCHOOLS    = 36
+N_YESHIVEH   = 14
+N_SYNAGOGUES = 69
+N_MIKVEH     = 35
+N_PEOPLE     = 1942
+N_ENRICHED   = 28
+N_SEROLOGY   = 1377
+N_PENRICHED  = 183
+N_SRANDOM    = 1240
+
+place_columns = {
+    "school.define": "school",
+    "yeshiva.define": "yeshiva",
+    "shul-shul.define": "synagogue",
+    "mikveh-mikveh.define": "mikvah",
+}
 
 def read_data(datafile):
     """
@@ -40,18 +57,14 @@ def _depanda(row):
         cleaned[k] = v
     return cleaned
 
-def generate_graph(data, minimal=True):
-    """
-    Construct an annotated graph from the data (see function read_data)
-    """
-    g = nx.Graph()
-
-    ## keep track of household key -> household id
+def add_households(g, data, minimal=True):
+    ## keep track of household key -> node id
     hhkeys = {}
     hhids = {}
 
-    ## XXX don't like hard-coding the file name here, must thing of better way
-    for hh in data['stamford_hill_survey.csv'].iloc:
+    nrows, _ = data.shape
+    log.info(f"Processing {nrows} households")
+    for hh in data.iloc:
         if hh["SubmissionDate"] < SURVEY_START:
             continue
 
@@ -72,114 +85,204 @@ def generate_graph(data, minimal=True):
         if hhid in hhids:
             log.warn("Duplicate household id {}".format(hhid))
 
-        hhids[hhid] = True
-        hhkeys[hhkey] = hhid
+        nid = len(g)
+        hhids[hhid] = nid
+        hhkeys[hhkey] = nid
 
         ## create a household node with attributes given by the row, verbatim
         attrs = {} if minimal else _depanda(hh)
-        attrs["width"] = 5
-        attrs["height"] = 5
-        g.add_node(hhkey, type="household", bipartite=1, **attrs)
+
+        g.add_node(nid, type="household", uuid=hhkey, bipartite=1, **attrs)
+
+    return hhkeys
+
+def add_places(g, data):
+    places = {}
+    for person in data.iloc:
+        for column, kind in place_columns.items():
+            place = person[column]
+            if isinstance(place, str):
+                for place in place.split(" "):
+                    if place in ('S0', 'S80', 'M80', 'Y54'):
+                        ## S0 means "no regular shul"
+                        ## S80, M80, Y54 mean "other"
+                        continue
+                    if place not in places:
+                        pid = len(g)
+                        places[place] = pid
+                        g.add_node(pid, type=kind, label=place, bipartite=1)
+    return places
+
+def add_people(g, places, data, minimal=True):
+    for p in data.iloc:
+        label = p["person_ID"]
+        assert isinstance(label, str), "Person {} has invalid person ID: {}".format(p["KEY"], p["person_ID"])
+
+        if p["PARENT_KEY"] not in places:
+            log.warn("Person {} belongs to nonexistent household {}".format(p["person_ID"], p["PARENT_KEY"]))
+            continue
+        hid = places[p["PARENT_KEY"]]
+
+        if minimal:
+            attrs = {
+                "age": p["hh_member_age"],
+                "sex": p["hh_member_sex"],
+            }
+        else:
+            attrs = _depanda(p)
+
+        if attrs["age"] < 13:
+            attrs["lifecycle"] = "child"
+        else:
+            attrs["lifecycle"] = "adult"
+
+        pid = len(g)
+        g.add_node(pid, type="person", label=label, bipartite=0, **attrs)
+        g.add_edge(pid, hid)
+
+        for column in place_columns:
+            place = p[column]
+            if isinstance(place, str):
+                for place in place.split(" "):
+                    plid = places.get(place)
+                    if plid is not None:
+                        g.add_edge(pid, plid)
+
+def generate_graph(data, minimal=True):
+    """
+    Construct an annotated graph from the data (see function read_data)
+    """
+    g = nx.Graph()
+
+    ## XXX don't like hard-coding the file name here, must thing of better way
+    hhkeys = add_households(g, data['stamford_hill_survey.csv'], minimal)
+
+    assert len(hhkeys) == N_HOUSEHOLDS
 
     ## we don't really care about 'stamford_hill_survey-hh_member_names_repeat.csv'
     ## because the names are repeated in member_info.
 
-    ## keep track of Schools, Yeshivas, Synagogues and Mikvahs
-    places = {}
-    def _add_place(p, pid, key):
-        place = p[key]
-        if isinstance(place, str):
-            for place in place.split(" "):
-                if place in ('S0',): ## S0 means "no regular shul"
-                    continue
-                if place not in places:
-                    places[place] = True
-                    if place.startswith("S"):
-                        kind = "shul"
-                        size = 60
-                    elif place.startswith("Y"):
-                        kind = "yeshiva"
-                        size = 40
-                    elif place.startswith("M"):
-                        kind = "mikvah"
-                        size = 30
-                    else:
-                        raise ValueError("Person {} has unknown kind of place {}".format(p["KEY"], place))
-                    g.add_node(place, type=kind, weight=10, width=size, height=size, bipartite=1)
-                g.add_edge(pid, place)
+    places = add_places(g, data['stamford_hill_survey-hh_member_info_repeat.csv'])
 
+    ## check that place labels are unique and the we do not have, for example,
+    ## that some people are connected to a given place as both a school and
+    ## a synagogue
+    place_labels = set(g.nodes[p]["label"] for p in places.values())
+    assert len(place_labels) == len(places)
+
+    ## check that we have all the right numbers of places of different kinds
+    n_households = len([n for n in g if g.nodes[n]["type"] == "household"])
+    assert n_households == N_HOUSEHOLDS, n_households
+
+    n_schools = len([n for n in g if g.nodes[n]["type"] == "school"])
+    assert n_schools == N_SCHOOLS, n_schools
+
+    n_yeshiveh = len([n for n in g if g.nodes[n]["type"] == "yeshiva"])
+    assert n_yeshiveh == N_YESHIVEH, n_yeshiveh
+
+    n_synagogues = len([n for n in g if g.nodes[n]["type"] == "synagogue"])
+    assert n_synagogues == N_SYNAGOGUES, n_synagogues
+
+    n_mikveh = len([n for n in g if g.nodes[n]["type"] == "mikvah"])
+    assert n_mikveh == N_MIKVEH, n_mikveh
+
+    places.update(hhkeys)
 
     ## PARENT_KEY is a pointer back to household
-    npeople = 0
-    for p in data['stamford_hill_survey-hh_member_info_repeat.csv'].iloc:
-        npeople += 1
-        pid = p["person_ID"]
-        assert isinstance(pid, str), "Person {} has invalid person ID: {}".format(p["KEY"], p["person_ID"])
+    add_people(g, places, data['stamford_hill_survey-hh_member_info_repeat.csv'])
 
-        if minimal: pid = "P%d" % npeople
-
-        if p["PARENT_KEY"] not in hhkeys:
-            log.warn("Person {} belongs to nonexistent household {}".format(p["person_ID"], p["PARENT_KEY"]))
-            continue
-        hhkey = p["PARENT_KEY"]
-
-        attrs = {} if minimal else _depanda(p)
-        attrs["age"] = p["hh_member_age"]
-        attrs["sex"] = p["hh_member_sex"]
-        attrs["width"] = 5*int(math.log(max(attrs["age"],2), 2))
-        attrs["height"] = 5*int(math.log(max(attrs["age"],2), 2))
-        g.add_node(pid, type="person", bipartite=0, **attrs)
-        g.add_edge(pid, hhkey, weight=1)
-
-        _add_place(p, pid, "school.define")
-        _add_place(p, pid, "yeshiva.define")
-        _add_place(p, pid, "shul-shul.define")
-        _add_place(p, pid, "mikveh-mikveh.define")
+    n_people = len([n for n in g if g.nodes[n]["type"] == "person"])
+    assert n_people == N_PEOPLE, n_people
 
     return g
 
-def augment_graph(g, datafile):
+def augment_graph(g, datafile, minimal=True):
     """
     Augment the graph with the combined serology data
     """
+    ## create an inverted map from label to node id
+    lmap = dict((g.nodes[n]["label"], n) for n in g if g.nodes[n].get("label") is not None)
+    ## create an inverted map from uuid to node id
+    umap = dict((g.nodes[n]["uuid"], n) for n in g if g.nodes[n].get("uuid") is not None)
+
     df = pd.read_csv(datafile)
     fields = ["spike_pos", "spike_pos2", "swab_POS", "serology_POS", "RBD_pos", "NC_pos",
               "SARS_S", "CoV2_N", "CoV_2_NTD", "CoV_2_RBD", "CoV_2_S", "X229Es", "HKU1S", "HL63s",
-              "OC43S", "enriched"]
+              "OC43S"]
 
-    df = df[df["GOTSERUM"] == 1]
     for row in df.iloc:
-        pid = row["person_ID"]
-        if pid not in g.nodes:
-            log.warn(f"Person {pid} not in graph")
-            continue
+        label = row["person_ID"]
+        pid = lmap[label]
 
-        for field in fields:
-            v = row[field]
+        hh = [n for n in nx.neighbors(g, pid) if g.nodes[n]["type"] == "household"]
+        if len(hh) != 1:
+            log.error(f"person {pid} ({uuid}) has wrong number of households {hh}")
+        hid = hh[0]
 
-            if field == "enriched":
-                if v == "RANDOM":
-                    v=False
-                elif v == "ENRICHED":
-                    v=True
-                else:
-                    log.warn(f"Weird value for Person {pid} field {field}: {v}")
+        enriched = row["enriched"]
+        if enriched == "RANDOM":
+            g.nodes[hid]["enriched"] = False
+        elif enriched == "ENRICHED":
+            g.nodes[hid]["enriched"] = True
+        else:
+            log.warn(f"Weird enriched value for Person {label}: {enriched}")
+
+        crowding = row["crowding"]
+        if crowding == "Correct":
+            g.nodes[hid]["crowding"] = False
+        elif crowding == "Over":
+            g.nodes[hid]["crowding"] = True
+        else:
+            log.warn(f"Weird crowding value for Person {label}: {crowding}")
+
+        serum = row["GOTSERUM"]
+        if np.isnan(serum):
+            g.nodes[pid]["serology"] = False
+        elif serum == 0.:
+            g.nodes[pid]["serology"] = False
+        else:
+            g.nodes[pid]["serology"] = True
+            spike = row["spike_pos"]
+            if np.isnan(spike):
+                log.warn(f"Weird spike_pos value for Person {label}: {spike}")
+            elif spike == 0.:
+                g.nodes[pid]["positive"] = False
+            else:
+                g.nodes[pid]["positive"] = True
+
+        if not minimal:
+            for field in fields:
+                v = row[field]
+                if isinstance(v, str):
+                    try:
+                        v = np.float64(v)
+                    except ValueError:
+                        log.warn(f"Weird value for Person {pid} field {field}: {v}")
+                        continue
+                if np.isnan(v):
                     continue
-                parent = g.nodes[pid]["PARENT_KEY"]
-                g.nodes[parent]["enriched"] = v
-                continue
+                if field.endswith("_POS"):
+                    field = field.lower()
+                elif field.startswith("CoV_2_"):
+                    field = "CoV2_" + field[5:]
+                g.nodes[pid][field] = v
 
-            if isinstance(v, str):
-                try:
-                    v = np.float64(v)
-                except ValueError:
-                    log.warn(f"Weird value for Person {pid} field {field}: {v}")
-                    continue
-            if np.isnan(v):
-                continue
-            if field.endswith("_POS"):
-                field = field.lower()
-            elif field.startswith("CoV_2_"):
-                field = "CoV2_" + field[5:]
-            g.nodes[pid][field] = v
+    n_enriched = len([n for n in g if g.nodes[n].get("enriched")])
+    assert n_enriched == N_ENRICHED, n_enriched
+
+    p_enriched = 0
+    for h in g:
+        if g.nodes[h].get("enriched"):
+            p_enriched += len([p for p in nx.neighbors(g, h)])
+    assert p_enriched == N_PENRICHED, p_enriched
+
+    n_serology = len([n for n in g if g.nodes[n].get("serology")])
+    assert n_serology == N_SEROLOGY, n_serology
+
+    n_srandom = 0
+    for h in g:
+        if g.nodes[h].get("enriched") is False:
+            n_srandom += len([p for p in nx.neighbors(g, h) if g.nodes[p].get("serology")])
+    assert n_srandom == N_SRANDOM, n_srandom
+
     return g

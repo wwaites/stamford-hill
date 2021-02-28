@@ -1,11 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
+import sys
+import inspect
 from stamford import graph
-from stamford.colours import LSHTM_COLOURS
-import argparse
-
-colours = list(LSHTM_COLOURS.values())
+from netabc.utils import envelope
+from netabc.command import cli
+from netabc.plot import colours
+import click
 
 def household_distributions(g):
     degs = {}
@@ -330,6 +332,66 @@ def command():
 
         fig.tight_layout()
         fig.savefig(f"{test}-curve.png")
+
+
+@cli.command(name="plot_scaled_activity")
+@click.option("--observable", "-o", "observables",
+              type=(str,str), multiple=True,
+              help="Observable, type pairs to plot.")
+@click.pass_context
+def plot_scaled_activity(ctx, observables):
+    """
+    Plot rule activity scaled by degree
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    if "store" not in ctx.obj:
+        click.secho(f"No data store specified. Cannot tell where to store results.", fg="red")
+        sys.exit(-1)
+    h5 = ctx.obj.store
+
+#    if output is None:
+    output = ctx.obj.prefix.strip("/")
+
+    samples = [h5[k] for k in h5 if k.startswith(ctx.obj.prefix)]
+
+    nobs = len(observables)
+    fig, axes = plt.subplots(nobs,2, figsize=(10,2*nobs))
+    degrees = nx.degree(g)
+    data = []
+
+    axa = axes[:,0]
+    axr = axes[:,1]
+
+    for i, (obs, kind) in enumerate(observables):
+        paths = 0
+        for n in g:
+            if g.nodes[n]["type"] == kind:
+                paths += degrees[n]
+        if paths == 0:
+            click.secho(f"Couldn't find any vertices of type {kind} in graph", fg="red")
+            return
+
+        abss = [s[obs].iloc[-1]/sum(s[o].iloc[-1] for o,_ in observables) for s in samples]
+        axa[i].axvline(np.mean(abss))
+        axa[i].hist(abss, bins=50, range=(0,0.5), density=True, color=colours[i], label=kind)
+        axa[i].set_xlim(0,0.5)
+        axa[i].legend()
+
+        rels = [s[obs].iloc[-1]/paths for s in samples]
+        axr[i].axvline(np.mean(rels))
+        axr[i].hist(rels, bins=50, range=(0,0.5), density=True, color=colours[i], label=kind)
+        axr[i].set_xlim(0,0.5)
+        axr[i].legend()
+
+    fig.tight_layout()
+    fig.savefig(f"{output}-final-activity.png")
+    #avg, std = envelope(samples)
 
 if __name__ == '__main__':
     command()

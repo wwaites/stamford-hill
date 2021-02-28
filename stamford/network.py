@@ -1,22 +1,9 @@
 __all__ = ["build_graph"]
 
-from stamford.graph import people
+from stamford.graph import people, household
 import networkx as nx
 import numpy as np
-
-def build_graph(graphml, other=False):
-    g = nx.read_graphml(graphml)
-    if not other:
-        g.remove_node("S80")
-        g.remove_node("M80")
-        g.remove_node("Y54")
-    for node, kind in nx.get_node_attributes(g, "kind").items():
-        if kind == "person":
-            g.nodes[node]["bipartite"] = 0
-        else:
-            g.nodes[node]["bipartite"] = 1
-            g.nodes[node]["label"] = kind
-    return g
+from scipy.stats import wasserstein_distance as wasserstein
 
 def sar(g, kind):
     places = {}
@@ -42,21 +29,71 @@ def sar(g, kind):
     ##
     N = sum(places.values())
     return sum( np.mean(attacks[n])*places[n]/N for n in places )
+#    return np.mean([np.mean(attacks[n]) for n in places])
+
+class EMSAR(object):
+    def __init__(self):
+        self.attacks = {}
+    def data(self, g):
+        types = set(g.nodes[n]["type"] for n in g)
+        for t in types:
+            self.attacks[t] = attack_histograms(g, t)
+    def __call__(self, g, t):
+        ghist = self.attacks[t]
+        ahist = attack_histograms(g, t)
+        dist = 0.0
+        for size in ghist:
+            u = ghist[size]
+            if size not in ahist:
+                continue
+            v = ahist[size]
+#            print(u, v)
+            dist += wasserstein(u/u.sum(), v/v.sum())
+        return dist
+
+def attack_histograms(g, t):
+    attacks = {}
+    for node in g:
+        if g.nodes[node]["type"] != t:
+            continue
+        r, n = 0, 0
+        for c in nx.neighbors(g, node):
+            n += 1
+            if g.nodes[c].get("c", "s") == "r":
+                r += 1
+        if n == 0:
+            continue
+        hist = attacks.get(n)
+        if hist is None:
+            hist = np.zeros(n+1)
+            attacks[n] = hist
+        hist[r] += 1
+    return attacks
+
+emsar = EMSAR()
 
 import click
 from netabc.command import cli
 @cli.command(name="stamford")
-@click.option("-f", "--filename", required=True, help="File containing annotated graph data")
 @click.pass_context
-def command(ctx, filename):
-    g = build_graph(filename)
+def command(ctx):
+    import inspect
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+    ctx.obj.stamford = g
+    
     for p in people(g):
-        spike = g.nodes[p].get("spike_pos")
-        if spike == 1.:
-            g.nodes[p]["c"] = "r"
-        elif spike == 0.:
-            g.nodes[p]["c"] = "s"
+        h = household(g, p)
+        if g.nodes[h]["enriched"]:
+            continue
+        if g.nodes[p]["serology"]:
+            if g.nodes[p]["positive"]:
+                g.nodes[p]["c"] = "r"
+            else:
+                g.nodes[p]["c"] = "s"
         else:
             g.remove_node(p)
-    for kind in ("household", "shul", "yeshiva", "mikvah"):
-        print(kind, sar(g, kind))
+    emsar.data(g)
+    for kind in ("household", "synagogue", "school", "yeshiva", "mikvah"):
+        click.secho(f"secondary attack rate for places of type {kind}: {sar(g, kind)}", fg="green")
+        assert emsar(g, kind) == 0.0
