@@ -9,7 +9,7 @@ from netabc.command import cli
 from netabc.plot import colours
 import click
 
-def household_distributions(g):
+def household_distributions(g, output):
     degs = {}
     pos = {}
     for h in graph.households(g):
@@ -17,19 +17,18 @@ def household_distributions(g):
             print(f"household {h} is neither random nor enriched")
             continue
         if g.nodes[h]["enriched"]:
-            print(f"skipping enriched household {h}")
+#            print(f"skipping enriched household {h}")
             continue
-        else:
-            print(f"using random household {h}")
+#        else:
+#            print(f"using random household {h}")
         members = list(nx.neighbors(g,h))
         sero = False
         spike = 0
         for m in members:
-            s = g.nodes[m].get("spike_pos")
-            if s is None:
+            if not g.nodes[m]["serology"]:
                 continue
             sero = True
-            if s == 1.0:
+            if g.nodes[m]["positive"]:
                 spike += 1
         if sero:
             degs[h] = len(members)
@@ -67,47 +66,80 @@ def household_distributions(g):
         ax = axes[1][i]
         ax.set_xlabel("Number of infections")
     fig.tight_layout()
-    fig.savefig("houshold-distributions.png")
+    fig.savefig(f"{output}-houshold-distributions.png")
 
-def command():
-    parser = argparse.ArgumentParser("stamford_plot")
-    parser.add_argument("graph", help="Sampled population graph")
-    args = parser.parse_args()
+@cli.command(name="plot_stamford")
+@click.option("--enriched", "-e", "enriched", is_flag=True, default=False,
+              help="Plot only enriched households.")
+@click.option("--random", "-r", "random", is_flag=True, default=False,
+              help="Plot only random households.")
+@click.option("--serology", "-s", "serology", is_flag=True, default=False,
+              help="Plot only households with serology.")
+@click.option("--output", "-o", "output", required=True,
+              help="Output filename")
+@click.pass_context
+def plot_stamford(ctx, enriched, random, serology, output):
+    """
+    Generate plots about Stamford Hill
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
 
-    g = nx.read_graphml(args.graph)
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
 
-    household_distributions(g)
+    if enriched:
+        not_enriched = [n for n in g if g.nodes[n]["type"] == "person" and not g.nodes[n]["enriched"]]
+        g.remove_nodes_from(not_enriched)
+    elif random:
+        not_random = [n for n in g if g.nodes[n]["type"] == "person" and g.nodes[n]["enriched"]]
+        g.remove_nodes_from(not_random)
+    if serology:
+        no_serology = [n for n in g if g.nodes[n]["type"] == "person" and not g.nodes[n]["serology"]]
+        g.remove_nodes_from(no_serology)
 
-    hh_degs, shul_degs, yeshiva_degs, mikvah_degs = graph.degrees(g)
+    household_distributions(g, output)
 
-    fig, ax = plt.subplots(2,2, figsize=(12,6))
+    hh_degs, school_degs, yeshiva_degs, synagogue_degs, mikvah_degs = graph.degrees(g)
+
+    fig, ax = plt.subplots(5,1, figsize=(6,15))
 
 #    fig.suptitle("Population distributions in various settings")
-    ax[0][0].hist(hh_degs, bins=np.linspace(1,15,15)-0.5, density=False, rwidth=0.9, color=colours[2])
-    ax[0][0].axvline(np.average(hh_degs), color=colours[1])
-    ax[0][0].text(0.5, 0.9, "mean = {:.1f}".format(np.average(hh_degs)), transform=ax[0][0].transAxes)
-    ax[0][0].set_ylabel("Households (total {})".format(len(graph.households(g))))
-    ax[0][0].set_xlabel("Size")
-    ax[0][1].hist(shul_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
-    ax[0][1].axvline(np.average(shul_degs), color=colours[1])
-    ax[0][1].text(0.5, 0.9, "mean = {:.1f}".format(np.average(shul_degs)), transform=ax[0][1].transAxes)
-    ax[0][1].set_ylabel("Shuls (total {})".format(len(graph.shuls(g))))
-    ax[0][1].set_xlabel("Size")
-    ax[1][0].hist(yeshiva_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
-    ax[1][0].axvline(np.average(yeshiva_degs), color=colours[1])
-    ax[1][0].text(0.5, 0.9, "mean = {:.1f}".format(np.average(yeshiva_degs)), transform=ax[1][0].transAxes)
-    ax[1][0].set_ylabel("Yeshivot (total {})".format(len(graph.yeshivas(g))))
-    ax[1][0].set_xlabel("Size")
-    ax[1][1].hist(mikvah_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
-    ax[1][1].axvline(np.average(mikvah_degs), color=colours[1])
-    ax[1][1].text(0.5, 0.9, "mean = {:.1f}".format(np.average(mikvah_degs)), transform=ax[1][1].transAxes)
-    ax[1][1].set_ylabel("Mikvot (total {})".format(len(graph.mikvahs(g))))
-    ax[1][1].set_xlabel("Size")
-    ax[1][1].set_ylim((0,18))
-    ax[1][1].set_yticks([2*y for y in range(10)])
+    ax[0].hist(hh_degs, bins=np.linspace(1,15,15)-0.5, density=False, rwidth=0.9, color=colours[2])
+    ax[0].axvline(np.average(hh_degs), color=colours[1])
+    ax[0].text(0.5, 0.9, "mean = {:.1f}".format(np.average(hh_degs)), transform=ax[0].transAxes)
+    ax[0].set_ylabel("Households (total {})".format(len(graph.households(g))))
+    ax[0].set_xlabel("Size")
+
+    ax[1].hist(school_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[1].axvline(np.average(school_degs), color=colours[1])
+    ax[1].text(0.5, 0.9, "mean = {:.1f}".format(np.average(school_degs)), transform=ax[1].transAxes)
+    ax[1].set_ylabel("Schools (total {})".format(len(graph.schools(g))))
+    ax[1].set_xlabel("Size")
+
+    ax[2].hist(yeshiva_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[2].axvline(np.average(yeshiva_degs), color=colours[1])
+    ax[2].text(0.5, 0.9, "mean = {:.1f}".format(np.average(yeshiva_degs)), transform=ax[2].transAxes)
+    ax[2].set_ylabel("Yeshivot (total {})".format(len(graph.yeshivot(g))))
+    ax[2].set_xlabel("Size")
+
+    ax[3].hist(synagogue_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[3].axvline(np.average(synagogue_degs), color=colours[1])
+    ax[3].text(0.5, 0.9, "mean = {:.1f}".format(np.average(synagogue_degs)), transform=ax[3].transAxes)
+    ax[3].set_ylabel("Synagogues (total {})".format(len(graph.synagogues(g))))
+    ax[3].set_xlabel("Size")
+
+    ax[4].hist(mikvah_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[4].axvline(np.average(mikvah_degs), color=colours[1])
+    ax[4].text(0.5, 0.9, "mean = {:.1f}".format(np.average(mikvah_degs)), transform=ax[4].transAxes)
+    ax[4].set_ylabel("Mikvot (total {})".format(len(graph.mikvahs(g))))
+    ax[4].set_xlabel("Size")
+#    ax[1].set_ylim((0,18))
+#    ax[1].set_yticks([2*y for y in range(10)])
 
     fig.tight_layout()
-    fig.savefig("degree-distributions.png")
+    fig.savefig(f"{output}-degree-distributions.png")
 
     # shul_yeshivas = graph.correlations(g)
 
@@ -150,7 +182,7 @@ def command():
     [ax.text(age-0.15, 2.5, "n = {}".format(len(scount.get(age, []))), rotation="vertical") for age in x]
 
     fig.tight_layout()
-    fig.savefig("age-reporting-symptoms.png")
+    fig.savefig(f"{output}-age-reporting-symptoms.png")
 
     ccount = {}
     dates = nx.get_node_attributes(g, "dates.covid")
@@ -173,7 +205,7 @@ def command():
     [ax.text(age-0.15, 2.5, "n = {}".format(len(ccount.get(age, []))), rotation="vertical") for age in x]
 
     fig.tight_layout()
-    fig.savefig("age-reporting-covid.png")
+    fig.savefig(f"{output}-age-reporting-covid.png")
 
     tcount = {}
     swabs = nx.get_node_attributes(g, "swab.test.result")
@@ -203,7 +235,7 @@ def command():
     [ax.text(age-0.15, 2.5, "n = {}".format(len(tcount.get(age, []))), rotation="vertical") for age in x]
 
     fig.tight_layout()
-    fig.savefig("age-test-covid.png")
+    fig.savefig(f"{output}-age-test-covid.png")
 
     cdate = {}
     for p in graph.people(g):
@@ -230,7 +262,7 @@ def command():
     plt.subplots_adjust(bottom=0.15)
 
     fig.tight_layout()
-    fig.savefig("self-reported-curve.png")
+    fig.savefig(f"{output}-self-reported-curve.png")
 
     cdate = {}
     syms =  nx.get_node_attributes(g, "symptoms")
@@ -262,7 +294,7 @@ def command():
     plt.subplots_adjust(bottom=0.15)
 
     fig.tight_layout()
-    fig.savefig("asymptomatic-screening.png")
+    fig.savefig(f"{output}-asymptomatic-screening.png")
 
 
     symptoms = set()
@@ -300,7 +332,7 @@ def command():
         plt.subplots_adjust(bottom=0.15)
 
         fig.tight_layout()
-        fig.savefig(f"symptoms-{sym}.png")
+        fig.savefig(f"{output}-symptoms-{sym}.png")
 
     ## serology dates
     sdate = {}
@@ -331,7 +363,7 @@ def command():
         plt.subplots_adjust(bottom=0.15)
 
         fig.tight_layout()
-        fig.savefig(f"{test}-curve.png")
+        fig.savefig(f"{output}-{test}-curve.png")
 
 
 @cli.command(name="plot_scaled_activity")
