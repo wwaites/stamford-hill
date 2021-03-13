@@ -80,8 +80,7 @@ def command(ctx):
     import inspect
     args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
     g = ctx.obj.graph(*args)
-    ctx.obj.stamford = g
-    
+
     for p in people(g):
         h = household(g, p)
         if g.nodes[h]["enriched"]:
