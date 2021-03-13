@@ -43,16 +43,15 @@ setup(name='stamford',
           'console_scripts': [
               'stamford_graph = stamford.graph:command',
               'stamford_house = stamford.house:command',
-              'stamford_plot = stamford.plot:command',
-          ],
-          'network_generators': [
-              'stamford_graph = stamford.network:build_graph'
           ],
           'netkappa_functions': [
-              'sar = stamford.network:sar'
+              'sar = stamford.network:sar',
+              'emsar = stamford.network:emsar'
           ],
           'netabc_commands': [
               'stamford  = stamford.network:command',
+              'plot_stamford = stamford.plot:plot_stamford',
+              'plot_scaled_activity = stamford.plot:plot_scaled_activity',
           ],
       },
 )
