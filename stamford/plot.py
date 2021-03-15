@@ -3,13 +3,15 @@ import numpy as np
 import networkx as nx
 import sys
 import inspect
+import ot
 from stamford import graph
+from stamford.network import emsar, attack_histograms
 from netabc.utils import envelope
 from netabc.command import cli
 from netabc.plot import colours
 import click
 
-def household_distributions(g, output):
+def household_distributions(g, output=None):
     degs = {}
     pos = {}
     for h in graph.households(g):
@@ -43,16 +45,20 @@ def household_distributions(g, output):
             p = 10
         subplots.setdefault(d, []).append(p)
 
+    if output is None:
+        return subplots
+
     attacks = {}
     for d in sorted(subplots):
-        dens, cases = np.histogram(subplots[d], bins=np.linspace(0,10,12), density=True)
-        ar = sum(dens*cases[:11])/d
+        dens, cases = np.histogram(subplots[d], bins=np.linspace(0,10,11), density=True)
+        ar = sum(dens*cases[:10])/d
         attacks[d] = ar
         print(f"size {d}: n = {len(subplots[d])} attack rate = {ar}")
+
     fig, axes = plt.subplots(2,5, figsize=(10,5))
     for i in range(10):
         ax = axes[int(i/5)][i%5]
-        ax.hist(subplots[i+1], bins=np.linspace(0,10,11)-0.5, rwidth=0.9, density=False)
+        ax.hist(subplots[i+1], bins=np.linspace(0,10,11), rwidth=0.9, density=True)
         if i == 9:
             ax.set_title(f"size $\geq$ {i+1}, AR $\geq$ {100*attacks[i+1]:.0f}%")
         else:
@@ -61,14 +67,14 @@ def household_distributions(g, output):
 
     for i in range(2):
         ax = axes[i][0]
-        ax.set_ylabel("Number of households")
+        ax.set_ylabel("Proportion of households")
     for i in range(5):
         ax = axes[1][i]
         ax.set_xlabel("Number of infections")
     fig.tight_layout()
     fig.savefig(f"{output}-houshold-distributions.png")
 
-@cli.command(name="plot_stamford")
+@cli.command(name="plot_stamford_data")
 @click.option("--enriched", "-e", "enriched", is_flag=True, default=False,
               help="Plot only enriched households.")
 @click.option("--random", "-r", "random", is_flag=True, default=False,
@@ -78,7 +84,7 @@ def household_distributions(g, output):
 @click.option("--output", "-o", "output", required=True,
               help="Output filename")
 @click.pass_context
-def plot_stamford(ctx, enriched, random, serology, output):
+def plot_stamford_data(ctx, enriched, random, serology, output):
     """
     Generate plots about Stamford Hill
     """
@@ -424,6 +430,116 @@ def plot_scaled_activity(ctx, observables):
     fig.tight_layout()
     fig.savefig(f"{output}-final-activity.png")
     #avg, std = envelope(samples)
+
+@cli.command(name="plot_stamford_sim")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def plot_stamford_sim(ctx, snapshots):
+    """
+    Stamford-hill specific simulation plots
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    if "store" not in ctx.obj:
+        click.secho(f"No data store specified. Cannot tell where to store results.", fg="red")
+        sys.exit(-1)
+
+    h5 = ctx.obj.store
+    samples = [h5[k] for k in h5 if k.startswith(ctx.obj.prefix)]
+
+    activities = {
+        "household": np.array([s["ACTC"].iloc[-1] + s["ACTA"].iloc[-1] for s in samples])
+    }
+    for obs, place in (("ACTS", "school"), ("ACTY", "yeshiva"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
+        activities[place] = np.array([s[obs].iloc[-1] for s in samples])
+    total = np.array([sum(activities[p] for p in activities)])
+
+    labels = {
+        "household": "household",
+        "school": "school",
+        "yeshiva": "religious school",
+        "synagogue": "place of worship",
+        "mikvah": "ritual bath",
+        "environment": "community",
+    }
+    fig, (ax1, ax2) = plt.subplots(2,1, figsize=(12,8))
+    for i, (p, data) in enumerate(activities.items()):
+        ax1.hist((data/total)[0], np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False, label=labels[p])
+        if p == "environment":
+            count = sum(1 for n in g.nodes if g.nodes[n]["type"] == "person") - 1
+        else:
+            count = sum(nx.degree(g, n) for n in g.nodes if g.nodes[n]["type"] == p)
+        ax2.hist(data/count, np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False)
+
+    ax1.set_ylabel("Number of simulations")
+    ax1.set_title("Total share of community transmission", loc="right", y=1.05)
+    ax2.set_ylabel("Number of simulations")
+    ax2.set_title("Relative transmission risk", loc="right", y=1.05)
+    ax1.legend(ncol=3, loc="center", bbox_to_anchor=(0.5, 1.1))
+    fig.tight_layout()
+    fig.savefig("rule-activities.png")
+
+    empirical = {}
+    eh = emsar.attacks["household"]
+    for size, hist in eh.items():
+        if size > 10: continue
+        hist = np.pad(hist, (0, 10-size))
+        hist = hist/hist.sum()
+        empirical[size] = hist
+
+    attacks = {}
+    for s in snapshots:
+        g = nx.read_graphml(s)
+        ah = attack_histograms(g, "household")
+        for size, hist in ah.items():
+            if size > 10: continue
+            hist = np.pad(hist, (0, 10-size))
+            hist = hist/hist.sum()
+            attacks.setdefault(size, []).append(hist)
+
+    fig, axes = plt.subplots(2,5, figsize=(12,6))
+    for size in sorted(attacks):
+#        if size < 5: continue
+        print(f"doing size {size}")
+        ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
+        ax.set_title(f"size = {size}")
+        ax.set_xlim(-0.5,10.5)
+
+        ## adapted from https://pot.readthedocs.io/en/autonb/auto_examples/plot_barycenter_1D.html
+        A = np.vstack(attacks[size]).T
+        n, n_dists = A.shape
+
+        # loss matrix + normalization
+        M = ot.utils.dist0(n)
+        M /= M.max()
+
+        # equal weights
+        weights = np.ones(n_dists)/n_dists
+
+        # wasserstein
+        reg = 1e-3
+        bary_wass = ot.bregman.barycenter(A, M, reg, weights)
+
+        edges = np.linspace(0,10,11)
+
+        ax.bar(edges+0.25, bary_wass, width=0.4, color=colours[1], label="Simulated")
+        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], label="Empirical")
+
+        if size == 1: ax.legend()
+
+    for i in range(2):
+        ax = axes[i][0]
+        ax.set_ylabel("Fraction of households")
+    for i in range(5):
+        ax = axes[1][i]
+        ax.set_xlabel("Number of infections")
+
+    fig.tight_layout()
+    fig.savefig("wasserstein.png")
 
 if __name__ == '__main__':
     command()
