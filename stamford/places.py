@@ -1,4 +1,4 @@
-from stamford.graph import people, yeshivas, shuls, mikvahs
+from stamford.graph import people, yeshivot, synagogues, mikvahs
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt

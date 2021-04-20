@@ -431,10 +431,10 @@ def plot_scaled_activity(ctx, observables):
     fig.savefig(f"{output}-final-activity.png")
     #avg, std = envelope(samples)
 
-@cli.command(name="plot_stamford_sim")
-@click.argument("snapshots", nargs=-1)
+@cli.command(name="plot_stamford_act")
+@click.option("--output", "-o", default="rule-activities.png", help="Output filename")
 @click.pass_context
-def plot_stamford_sim(ctx, snapshots):
+def plot_stamford_act(ctx, output):
     """
     Stamford-hill specific simulation plots
     """
@@ -451,10 +451,8 @@ def plot_stamford_sim(ctx, snapshots):
     h5 = ctx.obj.store
     samples = [h5[k] for k in h5 if k.startswith(ctx.obj.prefix)]
 
-    activities = {
-        "household": np.array([s["ACTC"].iloc[-1] + s["ACTA"].iloc[-1] for s in samples])
-    }
-    for obs, place in (("ACTS", "school"), ("ACTY", "yeshiva"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
+    activities = {}
+    for obs, place in (("ACTH", "household"), ("ACTS", "school"), ("ACTY", "yeshiva"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
         activities[place] = np.array([s[obs].iloc[-1] for s in samples])
     total = np.array([sum(activities[p] for p in activities)])
 
@@ -481,11 +479,19 @@ def plot_stamford_sim(ctx, snapshots):
     ax2.set_title("Relative transmission risk", loc="right", y=1.05)
     ax1.legend(ncol=3, loc="center", bbox_to_anchor=(0.5, 1.1))
     fig.tight_layout()
-    fig.savefig("rule-activities.png")
+    fig.savefig(output)
 
+@cli.command(name="plot_stamford_wass")
+@click.option("--output", "-o", default="wasserstein.png", help="Output filename")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def plot_stamford_wass(ctx, output, snapshots):
+    """
+    Stamford-hill specific simulation plots -- Wasserstein barycentre
+    """
     empirical = {}
     eh = emsar.attacks["household"]
-    for size, hist in eh.items():
+    for size, (hist, _) in eh.items():
         if size > 10: continue
         hist = np.pad(hist, (0, 10-size))
         hist = hist/hist.sum()
@@ -494,8 +500,8 @@ def plot_stamford_sim(ctx, snapshots):
     attacks = {}
     for s in snapshots:
         g = nx.read_graphml(s)
-        ah = attack_histograms(g, "household")
-        for size, hist in ah.items():
+        ah = attack_histograms(g, "household", eh)
+        for size, (hist, _) in ah.items():
             if size > 10: continue
             hist = np.pad(hist, (0, 10-size))
             hist = hist/hist.sum()
@@ -539,7 +545,41 @@ def plot_stamford_sim(ctx, snapshots):
         ax.set_xlabel("Number of infections")
 
     fig.tight_layout()
-    fig.savefig("wasserstein.png")
+    fig.savefig(output)
+
+@cli.command(name="plot_stamford_cens")
+@click.option("--output", "-o", default="censoring", help="Output filename")
+@click.pass_context
+def plot_stamford_cens(ctx, output):
+    """
+    Stamford-hill specific simulation plots -- Censoring
+    """
+    empirical = {}
+    eh = emsar.attacks["household"]
+    for size, (_, hist) in eh.items():
+        if size > 10: continue
+        hist = np.pad(hist, (0, 10-size))
+        hist = hist/hist.sum()
+        empirical[size] = hist
+
+    fig, axes = plt.subplots(2,5, figsize=(12,6))
+    for size in sorted(empirical):
+        ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
+        ax.set_title(f"size = {size}")
+        ax.set_xlim(-0.5,10.5)
+
+        edges = np.linspace(0,10,11)
+        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0])
+
+    for i in range(2):
+        ax = axes[i][0]
+        ax.set_ylabel("Fraction of households")
+    for i in range(5):
+        ax = axes[1][i]
+        ax.set_xlabel("Censored members")
+
+    fig.tight_layout()
+    fig.savefig(output)
 
 if __name__ == '__main__':
     command()

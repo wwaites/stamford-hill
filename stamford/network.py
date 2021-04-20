@@ -40,47 +40,86 @@ class EMSAR(object):
             self.attacks[t] = attack_histograms(g, t)
     def __call__(self, g, t):
         ghist = self.attacks[t]
-        ahist = attack_histograms(g, t)
+        ahist = attack_histograms(g, t, ghist)
         dist = 0.0
         for size in ghist:
-            u = ghist[size]
+            ## get attack rate and censorship histograms
+            ## for the reference data
+            u, x = ghist[size]
             if size not in ahist:
                 continue
-            v = ahist[size]
+            ## there is no intrinsic censorship in the
+            ## simulate
+            v, _ = ahist[size]
+            ## now, we should censor the simulation data
+            ## with the same censorship probability
 #            print(u, v)
             dist += wasserstein(u/u.sum(), v/v.sum())
         return dist
 
-def attack_histograms(g, t):
+def attack_histograms(g, t, ref = None):
+    """
+    Calculate attack rate and censorship histogram for
+    settings of type t. Optionally takes reference
+    histograms from which to censor the data in g.
+    """
     attacks = {}
     for node in g:
         if g.nodes[node]["type"] != t:
             continue
-        r, n = 0, 0
-        for c in nx.neighbors(g, node):
-            n += 1
-            if g.nodes[c].get("c", "s") == "r":
-                r += 1
+
+        ns = list(nx.neighbors(g, node))
+        n = len(ns)
         if n == 0:
             continue
-        hist = attacks.get(n)
-        if hist is None:
-            hist = np.zeros(n+1)
-            attacks[n] = hist
-        hist[r] += 1
+
+        ## decide how many household members to censor
+        if ref is not None:
+            if n not in ref:
+                #click.secho(f"no {t} of size {n} exists", fg="red")
+                drop = 0.0
+            else:
+                _, cens = ref[n]
+                drop = float(np.random.choice(range(n+1), p=cens/cens.sum()))
+                #print(f"size {n} censoring {drop}")
+        else:
+            drop = 0.0
+        drop = drop/n
+
+        r, x = 0, 0
+        for c in ns:
+            state = g.nodes[c].get("c", "s")
+            ## censor measurements probabilistically
+            if state == "x" or np.random.uniform() < drop:
+                ## sanity check, should not see censored data from simulation
+                if state == "x" and ref is not None:
+                    raise ValueError(f"should not have state {state} in simulation data")
+                x += 1
+            elif state == "r":
+                r += 1
+
+        if x == n: ## no serology from anyone in this household
+            continue
+
+        hists = attacks.get(n)
+        if hists is None:
+            att  = np.zeros(n+1)
+            cens = np.zeros(n+1)
+            attacks[n] = (att, cens)
+        else:
+            att, cens = hists
+        att[r]  += 1
+        cens[x] += 1
+
     return attacks
 
 emsar = EMSAR()
 
-import click
-from netabc.command import cli
-@cli.command(name="stamford")
-@click.pass_context
-def command(ctx):
-    import inspect
-    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
-    g = ctx.obj.graph(*args)
-
+def process_serology(g):
+    """
+    Mark disease state in the graph according to measured
+    serology status
+    """
     for p in people(g):
         h = household(g, p)
         if g.nodes[h]["enriched"]:
@@ -91,8 +130,66 @@ def command(ctx):
             else:
                 g.nodes[p]["c"] = "s"
         else:
-            g.remove_node(p)
+            g.nodes[p]["c"] = "x"
+    return g
+
+def scale_graph(template_graph, graph_scale):
+    """
+    Scale the network by adding or deleting a number of households
+    """
+    g = template_graph.copy()
+    hh = [n for n in g.nodes if g.nodes[n]["type"] == "household"]
+    n = len(hh)
+    m = int(graph_scale*n)
+    ## we select nodes to delete without replacement because we
+    ## can only chuck out a node once. when we are inflating the
+    ## network, however, we can use replacement because there is
+    ## no harm in principle with duplicating a node twice and
+    ## indeed for values of `graph_scale` > 2 we must do so.
+    replace = True if graph_scale > 1.0 else False
+    for h in np.random.choice(hh, abs(n-m), replace=replace):
+        ms = [i for i in nx.neighbors(g, h)]
+        if graph_scale < 1.0:
+            g.remove_nodes_from(ms)
+            g.remove_node(h)
+        else:
+            nid = max(int(i) for i in g.nodes) + 1
+            hid = nid
+            hattrs = g.nodes[h].copy()
+            hattrs["label"] = f"SH{hid}"
+            g.add_node(str(hid), **hattrs)
+            nid += 1
+            for p in ms:
+                pattrs = g.nodes[p].copy()
+                pattrs["label"] = f"SP{nid}"
+                g.add_node(str(nid), **pattrs)
+                g.add_edge(str(nid), str(hid))
+                for loc in nx.neighbors(g, p):
+                    if loc == h: continue
+                    g.add_edge(str(nid), loc)
+                nid += 1
+
+    return g
+
+import click
+from netabc.command import cli
+@cli.command(name="stamford")
+@click.option("--scale", "-s", type=float, default=None,
+              help="Scale graph by increasing/decreasing households")
+@click.pass_context
+def command(ctx, scale):
+    import inspect
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+    g = process_serology(g)
+
     emsar.data(g)
-    for kind in ("household", "synagogue", "school", "yeshiva", "mikvah"):
-        click.secho(f"secondary attack rate for places of type {kind}: {sar(g, kind)}", fg="green")
-        assert emsar(g, kind) == 0.0
+
+    if scale is not None:
+        ctx.obj.fixed["graph_scale"] = scale
+        ctx.obj.graph = scale_graph
+
+    # for kind in ("household", "synagogue", "school", "yeshiva", "mikvah"):
+    #     click.secho(f"secondary attack rate for places of type {kind}: {sar(g, kind)}", fg="green")
+    #     dist = emsar(g, kind)
+    #     assert dist == 0.0, dist
