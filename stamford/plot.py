@@ -507,13 +507,12 @@ def plot_stamford_wass(ctx, output, snapshots):
             hist = hist/hist.sum()
             attacks.setdefault(size, []).append(hist)
 
+    edges = np.linspace(0,10,11)
+
     fig, axes = plt.subplots(2,5, figsize=(12,6))
     for size in sorted(attacks):
-#        if size < 5: continue
         print(f"doing size {size}")
         ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
-        ax.set_title(f"size = {size}")
-        ax.set_xlim(-0.5,10.5)
 
         ## adapted from https://pot.readthedocs.io/en/autonb/auto_examples/plot_barycenter_1D.html
         A = np.vstack(attacks[size]).T
@@ -530,12 +529,16 @@ def plot_stamford_wass(ctx, output, snapshots):
         reg = 1e-3
         bary_wass = ot.bregman.barycenter(A, M, reg, weights)
 
-        edges = np.linspace(0,10,11)
-
         ax.bar(edges+0.25, bary_wass, width=0.4, color=colours[1], label="Simulated")
-        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], label="Empirical")
 
         if size == 1: ax.legend()
+
+    for size in sorted(empirical):
+        if size > 10: continue
+        ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
+        ax.set_title(f"size = {size}")
+        ax.set_xlim(-0.5,10.5)
+        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], label="Empirical")
 
     for i in range(2):
         ax = axes[i][0]
