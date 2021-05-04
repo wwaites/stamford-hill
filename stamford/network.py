@@ -133,7 +133,7 @@ def process_serology(g):
             g.nodes[p]["c"] = "x"
     return g
 
-def scale_graph(template_graph, graph_scale):
+def scale_graph(template_graph, graph_scale, graph_interventions):
     """
     Scale the network by adding or deleting a number of households
     """
@@ -169,6 +169,17 @@ def scale_graph(template_graph, graph_scale):
                     g.add_edge(str(nid), loc)
                 nid += 1
 
+    for kind, scale in graph_interventions:
+        places = [n for n in g.nodes if g.nodes[n]["type"] == kind]
+        degrees = nx.degree(g, places)
+        places = sorted(places, key=lambda p: degrees[p])
+        n = len(places)
+        m = int(scale*n)
+        g.remove_nodes_from(places[m:])
+
+    for kind, scale in graph_interventions:
+        places = [n for n in g.nodes if g.nodes[n]["type"] == kind]
+
     return g
 
 import click
@@ -176,8 +187,10 @@ from netabc.command import cli
 @cli.command(name="stamford")
 @click.option("--scale", "-s", type=float, default=None,
               help="Scale graph by increasing/decreasing households")
+@click.option("--interventions", "-i", type=(str, float), multiple=True,
+              help="Close a proportion of places of the given kind")
 @click.pass_context
-def command(ctx, scale):
+def command(ctx, scale, interventions):
     import inspect
     args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
     g = ctx.obj.graph(*args)
@@ -185,8 +198,9 @@ def command(ctx, scale):
 
     emsar.data(g)
 
-    if scale is not None:
+    if scale is not None or len(interventions) > 0:
         ctx.obj.fixed["graph_scale"] = scale
+        ctx.obj.fixed["graph_interventions"] = interventions
         ctx.obj.graph = scale_graph
 
     # for kind in ("household", "synagogue", "school", "yeshiva", "mikvah"):
