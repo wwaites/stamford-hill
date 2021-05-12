@@ -22,6 +22,8 @@ N_ENRICHED   = 28
 N_SEROLOGY   = 1377
 N_PENRICHED  = 183
 N_SRANDOM    = 1240
+N_PRIMARY    = 30
+N_SECONDARY  = 20
 
 place_columns = {
     "school.define": "school",
@@ -193,6 +195,17 @@ def generate_graph(data, minimal=True):
 
     n_people = len([n for n in g if g.nodes[n]["type"] == "person"])
     assert n_people == N_PEOPLE, n_people
+
+    ## no re-arrange schools and yeshiveh into primary and secondary age-bands
+    for n in [n for n in g if g.nodes[n]["type"] in ("school", "yeshiva")]:
+        age = np.mean([g.nodes[p]["age"] for p in nx.neighbors(g, n)])
+        if age < 13: g.nodes[n]["type"] = "primary"
+        else: g.nodes[n]["type"] = "secondary"
+
+    n_primary = len([n for n in g if g.nodes[n]["type"] == "primary"])
+    n_secondary = len([n for n in g if g.nodes[n]["type"] == "secondary"])
+    assert n_primary == N_PRIMARY, n_primary
+    assert n_secondary == N_SECONDARY, n_secondary
 
     return g
 
