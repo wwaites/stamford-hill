@@ -16,10 +16,10 @@ def people(g):
     return nodes_by_type(g, "person")
 def synagogues(g):
     return nodes_by_type(g, "synagogue")
-def yeshivot(g):
-    return nodes_by_type(g, "yeshiva")
-def schools(g):
-    return nodes_by_type(g, "school")
+def primaries(g):
+    return nodes_by_type(g, "primary")
+def secondaries(g):
+    return nodes_by_type(g, "secondary")
 def mikvahs(g):
     return nodes_by_type(g, "mikvah")
 def household(g, p):
@@ -29,8 +29,8 @@ def household(g, p):
 
 def places(g):
     return { "synagogue": synagogues(g),
-             "school": schools(g),
-             "yeshivot": yeshivot(g),
+             "secondaries": secondaries(g),
+             "primaries": primaries(g),
              "mikvah": mikvahs(g) }
 
 def members(g, hh):
@@ -88,12 +88,12 @@ def household_motifs(g):
 
 def degrees(g):
     hh_degs = [d for (_, d) in nx.degree(g, households(g))]
-    school_degs = [d for (_, d) in nx.degree(g, schools(g))]
-    yeshiva_degs = [d for (_, d) in nx.degree(g, yeshivot(g))]
+    primary_degs = [d for (_, d) in nx.degree(g, primaries(g))]
+    secondary_degs = [d for (_, d) in nx.degree(g, secondaries(g))]
     synagogue_degs = [d for (_, d) in nx.degree(g, synagogues(g))]
     mikvah_degs = [d for (_, d) in nx.degree(g, mikvahs(g))]
 
-    return [hh_degs, school_degs, yeshiva_degs, synagogue_degs, mikvah_degs]
+    return [hh_degs, primary_degs, secondary_degs, synagogue_degs, mikvah_degs]
 
 def command():
     parser = argparse.ArgumentParser("stamford_graph")
