@@ -1,4 +1,4 @@
-from stamford.graph import people, yeshivot, synagogues, mikvahs
+from stamford.graph import people, primaries, secondaries, synagogues, mikvahs
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -98,14 +98,14 @@ def draw(g, fname, step=4, pos=None):
             node_color=[node_colors[n] for n in shul_nodes],
             )
 
-    yeshiva_nodes = yeshivas(g)
+    primary_nodes = primaries(g)
     nx.draw(g, pos=pos,
             edgelist=[],
-            nodelist=yeshiva_nodes,
+            nodelist=primary_nodes,
             labels=labels, font_size=8,
             node_shape='s',
-            node_size=[node_sizes_normed[n] for n in yeshiva_nodes],
-            node_color=[node_colors[n] for n in yeshiva_nodes]
+            node_size=[node_sizes_normed[n] for n in primary_nodes],
+            node_color=[node_colors[n] for n in primary_nodes]
             )
     fig.savefig(fname)
 
