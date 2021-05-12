@@ -11,30 +11,33 @@ from netabc.command import cli
 from netabc.plot import colours
 import click
 
+## Because of community sensitivities, we must produce plots with
+## particular labels. The appropriate labels being the subject of
+## ongoing discussion and debate, we use a translating dictionary
+place_labels = {
+    "household": "household",
+    "primary": "primary school",
+    "secondary": "secondary school",
+    "synagogue": "place of worship",
+    "mikvah": "ritual bath",
+    "environment": "community",
+}
+
 def household_distributions(g, output=None):
     degs = {}
     pos = {}
     for h in graph.households(g):
-        if "enriched" not in g.nodes[h]:
-            print(f"household {h} is neither random nor enriched")
-            continue
-        if g.nodes[h]["enriched"]:
-#            print(f"skipping enriched household {h}")
-            continue
-#        else:
-#            print(f"using random household {h}")
         members = list(nx.neighbors(g,h))
         sero = False
         spike = 0
+        if not any([g.nodes[m]["serology"] for m in members]):
+            continue
         for m in members:
-            if not g.nodes[m]["serology"]:
-                continue
-            sero = True
-            if g.nodes[m]["positive"]:
+            if g.nodes[m]["serology"] and g.nodes[m]["positive"]:
                 spike += 1
-        if sero:
-            degs[h] = len(members)
-            pos[h] = spike
+
+        degs[h] = len(members)
+        pos[h] = spike
 
     subplots = {}
     for h, d in degs.items():
@@ -58,6 +61,8 @@ def household_distributions(g, output=None):
     fig, axes = plt.subplots(2,5, figsize=(10,5))
     for i in range(10):
         ax = axes[int(i/5)][i%5]
+        if (i+1) not in subplots:
+            continue
         ax.hist(subplots[i+1], bins=np.linspace(0,10,11), rwidth=0.9, density=True)
         if i == 9:
             ax.set_title(f"size $\geq$ {i+1}, AR $\geq$ {100*attacks[i+1]:.0f}%")
@@ -95,11 +100,13 @@ def plot_stamford_data(ctx, enriched, random, serology, output):
     args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
     g = ctx.obj.graph(*args)
 
+    def is_enriched(n):
+        return all([g.nodes[p]["enriched"] for p in nx.neighbors(g, n) if g.nodes[p]["type"] == "household"])
     if enriched:
-        not_enriched = [n for n in g if g.nodes[n]["type"] == "person" and not g.nodes[n]["enriched"]]
+        not_enriched = [n for n in g if g.nodes[n]["type"] == "person" and not is_enriched(n)]
         g.remove_nodes_from(not_enriched)
     elif random:
-        not_random = [n for n in g if g.nodes[n]["type"] == "person" and g.nodes[n]["enriched"]]
+        not_random = [n for n in g if g.nodes[n]["type"] == "person" and is_enriched(n)]
         g.remove_nodes_from(not_random)
     if serology:
         no_serology = [n for n in g if g.nodes[n]["type"] == "person" and not g.nodes[n]["serology"]]
@@ -107,7 +114,7 @@ def plot_stamford_data(ctx, enriched, random, serology, output):
 
     household_distributions(g, output)
 
-    hh_degs, school_degs, yeshiva_degs, synagogue_degs, mikvah_degs = graph.degrees(g)
+    hh_degs, primary_degs, secondary_degs, synagogue_degs, mikvah_degs = graph.degrees(g)
 
     fig, ax = plt.subplots(5,1, figsize=(6,15))
 
@@ -118,16 +125,16 @@ def plot_stamford_data(ctx, enriched, random, serology, output):
     ax[0].set_ylabel("Households (total {})".format(len(graph.households(g))))
     ax[0].set_xlabel("Size")
 
-    ax[1].hist(school_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
-    ax[1].axvline(np.average(school_degs), color=colours[1])
-    ax[1].text(0.5, 0.9, "mean = {:.1f}".format(np.average(school_degs)), transform=ax[1].transAxes)
-    ax[1].set_ylabel("Schools (total {})".format(len(graph.schools(g))))
+    ax[1].hist(primary_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[1].axvline(np.average(primary_degs), color=colours[1])
+    ax[1].text(0.5, 0.9, "mean = {:.1f}".format(np.average(primary_degs)), transform=ax[1].transAxes)
+    ax[1].set_ylabel("Primaries (total {})".format(len(graph.primaries(g))))
     ax[1].set_xlabel("Size")
 
-    ax[2].hist(yeshiva_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
-    ax[2].axvline(np.average(yeshiva_degs), color=colours[1])
-    ax[2].text(0.5, 0.9, "mean = {:.1f}".format(np.average(yeshiva_degs)), transform=ax[2].transAxes)
-    ax[2].set_ylabel("Yeshivot (total {})".format(len(graph.yeshivot(g))))
+    ax[2].hist(secondary_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
+    ax[2].axvline(np.average(secondary_degs), color=colours[1])
+    ax[2].text(0.5, 0.9, "mean = {:.1f}".format(np.average(secondary_degs)), transform=ax[2].transAxes)
+    ax[2].set_ylabel("Secondaries (total {})".format(len(graph.secondaries(g))))
     ax[2].set_xlabel("Size")
 
     ax[3].hist(synagogue_degs, bins=15, density=False, rwidth=0.9, color=colours[2])
@@ -141,29 +148,9 @@ def plot_stamford_data(ctx, enriched, random, serology, output):
     ax[4].text(0.5, 0.9, "mean = {:.1f}".format(np.average(mikvah_degs)), transform=ax[4].transAxes)
     ax[4].set_ylabel("Mikvot (total {})".format(len(graph.mikvahs(g))))
     ax[4].set_xlabel("Size")
-#    ax[1].set_ylim((0,18))
-#    ax[1].set_yticks([2*y for y in range(10)])
 
     fig.tight_layout()
     fig.savefig(f"{output}-degree-distributions.png")
-
-    # shul_yeshivas = graph.correlations(g)
-
-    # fig, ax = plt.subplots(1,1, figsize=(12,6))
-    # fig.suptitle("Conditional probability of attending yeshivas given elder shul")
-    # yeshivas = sorted(graph.yeshivas(g))
-    # yeshiva_map = dict((y, i) for (i,y) in enumerate(yeshivas))
-    # x = np.array(range(len(yeshivas)), dtype=np.float)
-    # width = 1.0/(len(yeshivas))
-    # for i, shul in enumerate(sorted(shul_yeshivas.keys())):
-    #     y = [0]*len(yeshivas)
-    #     total = sum(shul_yeshivas[shul].values())
-    #     for yeshiva, mult in shul_yeshivas[shul].items():
-    #         y[yeshiva_map[yeshiva]] = float(mult)/total
-    #     ax.bar(x+i*width, y, width=width, label=shul)
-    # ax.set_xlabel("Yeshiva number")
-    # ax.legend(ncol=6,framealpha=0)
-    # fig.savefig("conditional-yeshiva.png")
 
     scount = {}
     ages = nx.get_node_attributes(g, "age")
@@ -408,24 +395,31 @@ def plot_scaled_activity(ctx, observables):
 
     for i, (obs, kind) in enumerate(observables):
         paths = 0
-        for n in g:
-            if g.nodes[n]["type"] == kind:
-                paths += degrees[n]
-        if paths == 0:
-            click.secho(f"Couldn't find any vertices of type {kind} in graph", fg="red")
-            return
+        if obs == "ACTE": ## special case for non-network-mediated transmission
+            paths = len([n for n in g.nodes if g.nodes[n]["bipartite"] == 0]) - 1
+        else:
+            for n in g:
+                if g.nodes[n]["type"] == kind:
+                    paths += degrees[n]
 
         abss = [s[obs].iloc[-1]/sum(s[o].iloc[-1] for o,_ in observables) for s in samples]
         axa[i].axvline(np.mean(abss))
-        axa[i].hist(abss, bins=50, range=(0,0.5), density=True, color=colours[i], label=kind)
+        axa[i].hist(abss, bins=50, range=(0,0.5), density=True, color=colours[i], alpha=0.5, edgecolor=colours[i], label=place_labels[kind])
         axa[i].set_xlim(0,0.5)
         axa[i].legend()
 
+        if paths == 0:
+            click.secho(f"Couldn't find any vertices of type {kind} in graph", fg="red")
+            continue
+
         rels = [s[obs].iloc[-1]/paths for s in samples]
         axr[i].axvline(np.mean(rels))
-        axr[i].hist(rels, bins=50, range=(0,0.5), density=True, color=colours[i], label=kind)
+        axr[i].hist(rels, bins=50, range=(0,0.5), density=True, color=colours[i], alpha=0.5, edgecolor=colours[i], label=place_labels[kind])
         axr[i].set_xlim(0,0.5)
         axr[i].legend()
+
+    axa[0].set_title("Total share of community transmission")
+    axr[0].set_title("Relative transmission risk")
 
     fig.tight_layout()
     fig.savefig(f"{output}-final-activity.png")
@@ -452,21 +446,13 @@ def plot_stamford_act(ctx, output):
     samples = [h5[k] for k in h5 if k.startswith(ctx.obj.prefix)]
 
     activities = {}
-    for obs, place in (("ACTH", "household"), ("ACTS", "school"), ("ACTY", "yeshiva"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
+    for obs, place in (("ACTH", "household"), ("ACTP", "primary"), ("ACTS", "secondary"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
         activities[place] = np.array([s[obs].iloc[-1] for s in samples])
     total = np.array([sum(activities[p] for p in activities)])
 
-    labels = {
-        "household": "household",
-        "school": "school",
-        "yeshiva": "religious school",
-        "synagogue": "place of worship",
-        "mikvah": "ritual bath",
-        "environment": "community",
-    }
     fig, (ax1, ax2) = plt.subplots(2,1, figsize=(12,8))
     for i, (p, data) in enumerate(activities.items()):
-        ax1.hist((data/total)[0], np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False, label=labels[p])
+        ax1.hist((data/total)[0], np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False, label=place_labels[p])
         if p == "environment":
             count = sum(1 for n in g.nodes if g.nodes[n]["type"] == "person") - 1
         else:
@@ -477,7 +463,7 @@ def plot_stamford_act(ctx, output):
     ax1.set_title("Total share of community transmission", loc="right", y=1.05)
     ax2.set_ylabel("Number of simulations")
     ax2.set_title("Relative transmission risk", loc="right", y=1.05)
-    ax1.legend(ncol=3, loc="center", bbox_to_anchor=(0.5, 1.1))
+    ax1.legend(ncol=3, loc="lower left", bbox_to_anchor=(0, 1.05))
     fig.tight_layout()
     fig.savefig(output)
 
