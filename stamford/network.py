@@ -3,6 +3,7 @@ __all__ = ["build_graph"]
 from stamford.graph import people, household
 import networkx as nx
 import numpy as np
+import sys
 from scipy.stats import wasserstein_distance as wasserstein
 
 def sar(g, kind):
@@ -37,6 +38,8 @@ class EMSAR(object):
     def data(self, g):
         types = set(g.nodes[n]["type"] for n in g)
         for t in types:
+            if t == "person":
+                continue
             self.attacks[t] = attack_histograms(g, t)
     def __call__(self, g, t):
         ghist = self.attacks[t]
@@ -72,6 +75,14 @@ def attack_histograms(g, t, ref = None):
         n = len(ns)
         if n == 0:
             continue
+
+        # for the reference histogram, only include those with serology
+        if ref is None:
+            if not any([g.nodes[p]["serology"] for p in ns]):
+                continue
+            ## do not include enriched households either
+            if t == "household" and g.nodes[node]["enriched"]:
+                continue
 
         ## decide how many household members to censor
         if ref is not None:
@@ -133,7 +144,7 @@ def process_serology(g):
             g.nodes[p]["c"] = "x"
     return g
 
-def scale_graph(template_graph, graph_scale, graph_interventions):
+def scale_graph(template_graph, graph_scale):
     """
     Scale the network by adding or deleting a number of households
     """
@@ -168,8 +179,15 @@ def scale_graph(template_graph, graph_scale, graph_interventions):
                     if loc == h: continue
                     g.add_edge(str(nid), loc)
                 nid += 1
+    return g
 
-    for kind, scale in graph_interventions:
+def close_graph(template_graph, graph_close):
+    """
+    Remove the largest places from graph
+    """
+    g = template_graph.copy()
+
+    for kind, scale in graph_close:
         places = [n for n in g.nodes if g.nodes[n]["type"] == kind]
         degrees = nx.degree(g, places)
         places = sorted(places, key=lambda p: degrees[p])
@@ -177,8 +195,50 @@ def scale_graph(template_graph, graph_scale, graph_interventions):
         m = int(scale*n)
         g.remove_nodes_from(places[m:])
 
-    for kind, scale in graph_interventions:
-        places = [n for n in g.nodes if g.nodes[n]["type"] == kind]
+    return g
+
+def split_graph(template_graph, graph_split):
+    """
+    Split large places in the network
+    """
+    g = template_graph.copy()
+
+    nid = max(int(i) for i in g.nodes) + 1
+
+    for kind, scale in graph_split:
+#        click.secho(f"splitting the top {1.0-scale} places of kind {kind}", fg="green")
+        places  = [n for n in g.nodes if g.nodes[n]["type"] == kind]
+        degree_dict = nx.degree(g, places)
+        places  = sorted(places, key=lambda p: degree_dict[p])
+        degrees = [degree_dict[p] for p in places]
+        pctile  = np.percentile(degrees, scale*100)
+#        click.secho(f"{int(scale*100)}th %ile size is {pctile}", fg="green")
+
+        bigplaces = [places[i] for i in range(len(degrees)) if degrees[i] > pctile]
+        for bigplace in bigplaces:
+#            click.secho(f"splitting size {nx.degree(g, bigplace)} place {bigplace} {g.nodes[bigplace]}", fg="yellow")
+            assert g.nodes[bigplace]["bipartite"] == 1
+
+            members   = list(nx.neighbors(g, bigplace))
+            chunks    = int(len(members)/pctile) + 1
+            chunksize = int(len(members)/chunks)
+
+            for _ in range(chunks - 1):
+                newplace = nid
+                nid += 1
+                attrs = g.nodes[bigplace].copy()
+                attrs["label"] = attrs["label"] + f"-C{nid}"
+                g.add_node(newplace, **attrs)
+#                click.secho(f"\tmade {newplace} {g.nodes[newplace]}", fg="yellow")
+
+                move = np.random.choice(members, chunksize, replace=False)
+                for m in move:
+                    g.remove_edge(m, bigplace)
+                    g.add_edge(m, newplace)
+                    members.remove(m)
+#                click.secho(f"\t{newplace} is size {nx.degree(g, newplace)}", fg="yellow")
+
+#            click.secho(f"\tnow {bigplace} is size {nx.degree(g, bigplace)}", fg="yellow")
 
     return g
 
@@ -187,10 +247,12 @@ from netabc.command import cli
 @cli.command(name="stamford")
 @click.option("--scale", "-s", type=float, default=None,
               help="Scale graph by increasing/decreasing households")
-@click.option("--interventions", "-i", type=(str, float), multiple=True,
+@click.option("--split", "-x", type=(str, float), multiple=True,
+              help="Split places greater than the given %ile degree in the original network")
+@click.option("--close", "-c", type=(str, float), multiple=True,
               help="Close a proportion of places of the given kind")
 @click.pass_context
-def command(ctx, scale, interventions):
+def command(ctx, scale, split, close):
     import inspect
     args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
     g = ctx.obj.graph(*args)
@@ -198,12 +260,16 @@ def command(ctx, scale, interventions):
 
     emsar.data(g)
 
-    if scale is not None or len(interventions) > 0:
-        ctx.obj.fixed["graph_scale"] = scale
-        ctx.obj.fixed["graph_interventions"] = interventions
-        ctx.obj.graph = scale_graph
+    if np.sum([scale is not None, len(split) > 0, len(close) > 0]) > 1:
+        click.secho("stamford: --scale and --split are mutually exclusive", fg="red")
+        sys.exit(-1)
 
-    # for kind in ("household", "synagogue", "school", "yeshiva", "mikvah"):
-    #     click.secho(f"secondary attack rate for places of type {kind}: {sar(g, kind)}", fg="green")
-    #     dist = emsar(g, kind)
-    #     assert dist == 0.0, dist
+    if scale is not None:
+        ctx.obj.fixed["graph_scale"] = scale
+        ctx.obj.graph = scale_graph
+    if len(split) > 0:
+        ctx.obj.fixed["graph_split"] = split
+        ctx.obj.graph = split_graph
+    if len(close) > 0:
+        ctx.obj.fixed["graph_close"] = close
+        ctx.obj.graph = close_graph
