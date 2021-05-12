@@ -42,7 +42,6 @@ setup(name='stamford',
       entry_points={
           'console_scripts': [
               'stamford_graph = stamford.graph:command',
-              'stamford_house = stamford.house:command',
           ],
           'netkappa_functions': [
               'sar = stamford.network:sar',
@@ -53,6 +52,7 @@ setup(name='stamford',
               'plot_stamford_data = stamford.plot:plot_stamford_data',
               'plot_stamford_act = stamford.plot:plot_stamford_act',
               'plot_stamford_cens = stamford.plot:plot_stamford_cens',
+              'plot_stamford_intro = stamford.plot:plot_stamford_intro',
               'plot_stamford_wass = stamford.plot:plot_stamford_wass',
               'plot_scaled_activity = stamford.plot:plot_scaled_activity',
           ],
