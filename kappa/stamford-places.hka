@@ -10,8 +10,8 @@
 %agent: person(c{s e i r}, loc)
 %agent: household(loc)
 %agent: synagogue(loc)
-%agent: school(loc)
-%agent: yeshiva(loc)
+%agent: primary(loc)
+%agent: secondary(loc)
 %agent: mikvah(loc)
 
 // a bipartite graph is externally supplied, but we give it
@@ -31,33 +31,33 @@
 // infectious people in that place.
 //
 // the transmission probabilities per unit time for each place
-// beta_h, beta_g, beta_s, beta_y and beta_m, are supplied
+// beta_h, beta_g, beta_p, beta_s and beta_m, are supplied
 // separately because we allow them to vary for fitting
 //'infection_household_child' household(loc[1])[p], person(c{s}, lifecycle{child}, loc[1]) \
 //                         -> household(loc[1]),    person(c{e}, lifecycle{child}, loc[1]) @ beta_c*inf(g,p)
 //'infection_household_adult' household(loc[1])[p], person(c{s}, lifecycle{adult}, loc[1]) \
 //                         -> household(loc[1]),    person(c{e}, lifecycle{adult}, loc[1]) @ beta_a*inf(g,p)
-'infection_household' household(loc[1])[p], person(c{s}, loc[1]) \
-                   -> household(loc[1]),    person(c{e}, loc[1]) @ beta_h*inf(g,p)
+'infection_household' household(loc[1])[p], person(c{s}, i{none}, loc[1]) \
+                   -> household(loc[1]),    person(c{e}, i{household}, loc[1]) @ beta_h*inf(g,p)
 
-'infection_synagogue' synagogue(loc[1])[p], person(c{s}, loc[1]) \
-                   -> synagogue(loc[1]),    person(c{e}, loc[1]) @ beta_g*inf(g,p)
+'infection_synagogue' synagogue(loc[1])[p], person(c{s}, i{none}, loc[1]) \
+                   -> synagogue(loc[1]),    person(c{e}, i{synagogue}, loc[1]) @ beta_g*inf(g,p)
 
-'infection_school' school(loc[1])[p], person(c{s}, loc[1]) \
-                -> school(loc[1]),    person(c{e}, loc[1]) @ beta_s*inf(g,p)
+'infection_primary' primary(loc[1])[p], person(c{s}, i{none}, loc[1]) \
+                 -> primary(loc[1]),    person(c{e}, i{primary}, loc[1]) @ beta_p*inf(g,p)
 
-'infection_yeshiva' yeshiva(loc[1])[p], person(c{s}, loc[1]) \
-                 -> yeshiva(loc[1]),    person(c{e}, loc[1]) @ beta_y*inf(g,p)
+'infection_secondary' secondary(loc[1])[p], person(c{s}, i{none}, loc[1]) \
+                 -> secondary(loc[1]),    person(c{e}, i{secondary}, loc[1]) @ beta_s*inf(g,p)
 
-'infection_mikvah' mikvah(loc[1])[p], person(c{s}, loc[1]) \
-                -> mikvah(loc[1]),    person(c{e}, loc[1]) @ beta_m*inf(g,p)
+'infection_mikvah' mikvah(loc[1])[p], person(c{s}, i{none}, loc[1]) \
+                -> mikvah(loc[1]),    person(c{e}, i{mikvah}, loc[1]) @ beta_m*inf(g,p)
 
 // this is a well-mixed rule, the *> symbol signals to the
 // simulator to not enumerate all possible embeddings but
 // simply to choose agents on the left-hand side at random
 // as with a petri net
-'infection_environment' person(c{s}), person(c{i}) \
-                     *> person(c{e}), person(c{i}) @ beta_e/1942
+'infection_environment' person(c{s}, i{none}), person(c{i}) \
+                     *> person(c{e}, i{community}), person(c{i}) @ beta_e/1942
 
 %obs: S |person(c{s})|
 %obs: E |person(c{e})|
@@ -69,25 +69,25 @@
 %obs: Fr |person(sex{female}, c{r})|
 %obs: HSAR sar(g, "household")
 %obs: GSAR sar(g, "synagogue")
-%obs: SSAR sar(g, "school")
-%obs: YSAR sar(g, "yeshiva")
+%obs: PSAR sar(g, "primary")
+%obs: SSAR sar(g, "secondary")
 %obs: MSAR sar(g, "mikvah")
 %obs: DHSAR emsar(g, "household")
 %obs: DGSAR emsar(g, "synagogue")
-%obs: DSSAR emsar(g, "school")
-%obs: DYSAR emsar(g, "yeshiva")
+%obs: DPSAR emsar(g, "primary")
+%obs: DSSAR emsar(g, "secondary")
 %obs: DMSAR emsar(g, "mikvah")
 //%obs: ACTC  activity(infection_household_child)
 //%obs: ACTA  activity(infection_household_adult)
 %obs: ACTH  activity(infection_household)
 %obs: ACTG  activity(infection_synagogue)
-%obs: ACTS  activity(infection_school)
-%obs: ACTY  activity(infection_yeshiva)
+%obs: ACTP  activity(infection_primary)
+%obs: ACTS  activity(infection_secondary)
 %obs: ACTM  activity(infection_mikvah)
 %obs: ACTE  activity(infection_environment)
 
 // unlike regular kappa, these values are the fraction of the
 // nodes in the supplied graph that should have their initial
 // states set according to this specification
-%init: 0.99 person(c{s})
-%init: 0.01 person(c{i})
+%init: 0.99 person(c{s}, i{none})
+%init: 0.01 person(c{i}, i{init})
