@@ -500,31 +500,40 @@ def plot_stamford_wass(ctx, output, snapshots):
         print(f"doing size {size}")
         ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
 
-        ## adapted from https://pot.readthedocs.io/en/autonb/auto_examples/plot_barycenter_1D.html
         A = np.vstack(attacks[size]).T
-        n, n_dists = A.shape
+        if size == 1:
+            ## fix the problem where the computation of the barycentre fails
+            ## for households of size one. that's fine, we can do that case
+            ## by hand
+            infected = np.mean(A[1])
+            bary_wass = np.zeros(11)
+            bary_wass[0] = 1.0 - infected
+            bary_wass[1] = infected
+        else:
+            ## adapted from https://pot.readthedocs.io/en/autonb/auto_examples/plot_barycenter_1D.html
+            A = np.vstack(attacks[size]).T
+            n, n_dists = A.shape
 
-        # loss matrix + normalization
-        M = ot.utils.dist0(n)
-        M /= M.max()
+            # loss matrix + normalization
+            M = ot.utils.dist0(n)
+            M /= M.max()
 
-        # equal weights
-        weights = np.ones(n_dists)/n_dists
+            # equal weights
+            weights = np.ones(n_dists)/n_dists
 
-        # wasserstein
-        reg = 1e-3
-        bary_wass = ot.bregman.barycenter(A, M, reg, weights)
+            # wasserstein
+            reg = 1e-3
+            bary_wass = ot.bregman.barycenter(A, M, reg, weights)
 
-        ax.bar(edges+0.25, bary_wass, width=0.4, color=colours[1], label="Simulated")
-
-        if size == 1: ax.legend()
+        ax.bar(edges+0.25, bary_wass, width=0.4, color=colours[1], alpha=0.5, edgecolor=colours[1], label="Simulated")
 
     for size in sorted(empirical):
         if size > 10: continue
         ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
         ax.set_title(f"size = {size}")
         ax.set_xlim(-0.5,10.5)
-        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], label="Empirical")
+        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], alpha=0.5, edgecolor=colours[0], label="Empirical")
+        if size == 1: ax.legend()
 
     for i in range(2):
         ax = axes[i][0]
@@ -558,7 +567,7 @@ def plot_stamford_cens(ctx, output):
         ax.set_xlim(-0.5,10.5)
 
         edges = np.linspace(0,10,11)
-        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0])
+        ax.bar(edges-0.25, empirical[size], width=0.4, color=colours[0], alpha=0.5, edgecolor=colours[0])
 
     for i in range(2):
         ax = axes[i][0]
