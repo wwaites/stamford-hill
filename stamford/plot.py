@@ -570,5 +570,138 @@ def plot_stamford_cens(ctx, output):
     fig.tight_layout()
     fig.savefig(output)
 
-if __name__ == '__main__':
-    command()
+@cli.command(name="plot_stamford_demo")
+@click.option("--output", "-o", "output", default="stamford-demographics.png",
+              help="Output filename")
+@click.pass_context
+def plot_stamford_demo(ctx, output):
+    """
+    Generate plots about Stamford Hill
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    fig, (axs, axa) = plt.subplots(2, len(place_labels), figsize=(10,5))
+
+    for k, kind in enumerate(place_labels):
+        if kind == "environment":
+            males = [sum([g.nodes[p]["sex"] == "male" for p in g if g.nodes[p]["type"] == "person"])]
+            females = [sum([g.nodes[p]["sex"] == "female" for p in g if g.nodes[p]["type"] == "person"])]
+        else:
+            males = [sum([g.nodes[p]["sex"] == "male" for p in nx.neighbors(g, q)]) for q in g if g.nodes[q]["type"] == kind]
+            females = [sum([g.nodes[p]["sex"] == "female" for p in nx.neighbors(g, q)]) for q in g if g.nodes[q]["type"] == kind]
+
+        ## filter out any places of zero size
+        nz_males = np.array([m for i,m in enumerate(males) if m + females[i] > 0])
+        nz_females = np.array([f for i,f in enumerate(females) if f + males[i] > 0])
+        males, females = nz_males, nz_females
+        #print(kind, males + females)
+
+        edges = np.linspace(0,1,11)
+        hist, _ = np.histogram(males/(males + females), bins=11, density=True, range=(0, 1))
+        axs[k].set_title(place_labels[kind], fontdict={"fontsize": 8})
+        axs[k].bar(edges, hist, width=0.1, color=colours[k], alpha=0.5, edgecolor=colours[k])
+        axs[k].set_yticks([])
+        if k == 0:
+            axs[k].set_ylabel("Fraction male")
+
+    for k, kind in enumerate(place_labels):
+        if kind == "environment":
+            ages = [g.nodes[p]["age"] for p in g if g.nodes[p]["type"] == "person"]
+        else:
+            ## adapted from https://pot.readthedocs.io/en/autonb/auto_examples/plot_barycenter_1D.html
+            ages = []
+            for q in g.nodes:
+                if g.nodes[q]["type"] != kind:
+                    continue
+                ns = [g.nodes[p]["age"] for p in nx.neighbors(g, q)]
+                if len(ns) == 0:
+                    continue
+                ages.append(np.mean(ns))
+
+        hist, _ = np.histogram(ages, bins=17, density=True, range=(0,80))
+        edges = np.linspace(0,80,17)
+        axa[k].bar(edges, hist, width=5, color=colours[k], alpha=0.5, edgecolor=colours[k])
+        axa[k].set_yticks([])
+        axa[k].set_xticks([0,20,40,60,80])
+        if k == 0:
+            axa[k].set_ylabel("Mean age distribution")
+
+    fig.tight_layout()
+    fig.savefig(output)
+
+@cli.command(name="plot_stamford_intro")
+@click.argument("snapshots", nargs=-1)
+@click.option("--output", "-o", "output", default="stamford-intros.png",
+              help="Output filename")
+@click.pass_context
+def plot_stamford_intro(ctx, snapshots, output):
+    ## place_labels has "environment" in place of "community"
+    sources = list(place_labels)[:-1] + ["community", "init", "none"]
+    intros = {}
+
+    for s in snapshots:
+        g = nx.read_graphml(s)
+        for h in graph.households(g):
+            members = list(nx.neighbors(g, h))
+            if len(members) > 10: continue
+            counts = {}
+            for m in members:
+                source = g.nodes[m].get("i", "none")
+                if source == "houshold": source = "household" ## TODO remove typeo kludge
+                counts[source] = counts.setdefault(source, 0) + 1
+
+            assert sum(counts.values()) == len(members)
+            if counts.get("init", 0) + counts.get("none", 0) == len(members): ## don't count households with no infections
+                continue
+            for s, c in counts.items():
+                count = np.zeros(10)
+                count[len(members)-1] = c
+                intros.setdefault(s, []).append(count)
+
+    rows, cols = 3, 2
+    fig, axes = plt.subplots(rows, cols, figsize=(10,7))
+    bins = 10
+    edges = np.linspace(1,10,bins)
+    for src in range(rows*cols):
+        row = src // cols
+        col = src % cols
+        ax = axes[row][col]
+
+        ## list of arrays of counts by household size
+        source_counts = np.vstack(intros[sources[src]])
+        avg_counts = np.mean(source_counts, axis=0)
+        p5_counts = np.percentile(source_counts, 5, axis=0)
+        p95_counts = np.percentile(source_counts, 95, axis=0)
+        confidence = np.vstack([avg_counts-p5_counts,p95_counts-avg_counts])
+
+        label = place_labels[sources[src]] if sources[src] != "community" else sources[src]
+        ax.bar(edges, avg_counts, yerr=confidence, capsize=5, color=colours[src], alpha=0.5, edgecolor=colours[src])
+        ax.set_title(label)
+
+    for i in range(cols):
+        axes[rows-1][i].set_xlabel("Household size")
+    for i in range(rows):
+        axes[i][0].set_ylabel("Infections")
+
+    fig.tight_layout()
+    fig.savefig(output)
+
+@cli.command(name="compute_stamford_dist")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def compute_stamford_dist(ctx, snapshots):
+    """
+    Stamford-hill specific simulation plots -- distance measure
+    """
+    distances = []
+    for s in snapshots:
+        g = nx.read_graphml(s)
+        dist = emsar(g, "household")
+        distances.append(dist)
+
+    print(np.mean(distances), np.std(distances))
