@@ -24,7 +24,7 @@ all:
 	make PCTILE=0.6 split split_plots || true
 	make PCTILE=0.5 split split_plots || true
 
-plots: censoring.png test-distributions.png rule-activities.png wasserstein.png introductions.png rule-activities-tight.png wasserstein-tight.png introductions-tight.png
+plots: censoring.png test-distributions.png rule-activities.png wasserstein.png introductions.png epidemic-S-E-I-R.png rule-activities-tight.png wasserstein-tight.png introductions-tight.png epidemic-tight-S-E-I-R.png
 
 ${GRAPH}: stamford_hill_survey.zip combined_data.csv
 	stamford_graph $^ > $@
@@ -133,6 +133,9 @@ wasserstein.png: ${TRAJS}
 introductions.png: ${TRAJS}
 	netabc plot_stamford_intro -o $@ snapshots/stamford-snapshot*.graphml
 
+epidemic-S-E-I-R.png: ${TRAJS}
+	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic
+
 test-distributions.png: ${GRAPH}
 	netabc graph -f ${GRAPH} stamford plot_stamford_wass -o $@
 
@@ -148,29 +151,38 @@ wasserstein-tight.png: tight.h5
 introductions-tight.png: tight.h5
 	netabc plot_stamford_intro -o $@ snapshots/tight-snapshot*.graphml
 
-sensitivity_plots: rule-activities-${SCALE}.png wasserstein-${SCALE}.png introductions-${SCALE}.png
+epidemic-tight-S-E-I-R.png: tight.h5
+	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-tight
+
+sensitivity_plots: rule-activities-${SCALE}.png wasserstein-${SCALE}.png introductions-${SCALE}.png epidemic-sensitivity-${SCALE}-S-E-I-R.png
 rule-activities-${SCALE}.png: sensitivity-${SCALE}.h5
 	netabc store -r -d $< -p net graph -f ${GRAPH} stamford -s ${SCALE} plot_stamford_act -o $@
 wasserstein-${SCALE}.png: sensitivity-${SCALE}.h5
 	netabc graph -f ${GRAPH} stamford -s ${SCALE} plot_stamford_wass -o $@ snapshots/sensitivity-${SCALE}-snapshot-*.graphml
 introductions-${SCALE}.png: sensitivity-${SCALE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/sensitivity-${SCALE}-snapshot*.graphml
+epidemic-sensitivity-${SCALE}-S-E-I-R.png: sensitivity-${SCALE}.h5
+	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-sensitivity-${SCALE}
 
-close_plots: rule-activities-${PLACE}-${SCALE}.png wasserstein-${PLACE}-${SCALE}.png introductions-close-${PLACE}-${SCALE}.png
+close_plots: rule-activities-${PLACE}-${SCALE}.png wasserstein-${PLACE}-${SCALE}.png introductions-close-${PLACE}-${SCALE}.png epidemic-close-${PLACE}-${SCALE}-S-E-I-R.png
 rule-activities-${PLACE}-${SCALE}.png: close-${PLACE}-${SCALE}.h5
 	netabc store -r -d $< -p net graph -f ${GRAPH} stamford -c ${PLACE} ${SCALE} plot_stamford_act -o $@
 wasserstein-${PLACE}-${SCALE}.png: close-${PLACE}-${SCALE}.h5
 	netabc graph -f ${GRAPH} stamford -c ${PLACE} ${SCALE} plot_stamford_wass -o $@ snapshots/close-${PLACE}-${SCALE}-snapshot-*.graphml
-introductions-split-${PLACE-SCALE}.png: close-${PLACE}-${SCALE}.h5
+introductions-close-${PLACE}-${SCALE}.png: close-${PLACE}-${SCALE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/close-${PLACE}-${SCALE}-snapshot*.graphml
+epidemic-close-${PLACE}-${SCALE}-S-E-I-R.png: close-${PLACE}-${SCALE}.h5
+	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-close-${PLACE}-${SCALE}
 
-split_plots: rule-activities-split-${PCTILE}.png wasserstein-split-${PCTILE}.png introductions-split-${PCTILE}.png #split-${PCTILE}-kde.png
+split_plots: rule-activities-split-${PCTILE}.png wasserstein-split-${PCTILE}.png introductions-split-${PCTILE}.png epidemic-split-${PCTILE}-S-E-I-R.png #split-${PCTILE}-kde.png
 rule-activities-split-${PCTILE}.png: split-${PCTILE}.h5
 	netabc store -r -d $< -p net graph -f ${GRAPH} stamford -x synagogue ${PCTILE} -x primary ${PCTILE} plot_stamford_act -o $@
 wasserstein-split-${PCTILE}.png: split-${PCTILE}.h5
 	netabc graph -f ${GRAPH} stamford -x synagogue ${PCTILE} -x primary ${PCTILE} plot_stamford_wass -o $@ snapshots/split-${PCTILE}-snapshot-*.graphml
 introductions-split-${PCTILE}.png: split-${PCTILE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/split-${PCTILE}-snapshot*.graphml
+epidemic-split-${PCTILE}-S-E-I-R.png: split-${PCTILE}.h5
+	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-split-${PCTILE}
 
 split_distances.tsv:
 	rm -f $@
