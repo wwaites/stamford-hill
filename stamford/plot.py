@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import networkx as nx
 import sys
 import inspect
@@ -425,6 +426,92 @@ def plot_scaled_activity(ctx, observables):
     fig.savefig(f"{output}-final-activity.png")
     #avg, std = envelope(samples)
 
+def stamford_act(g, h5, prefix):
+    samples = [h5[k] for k in h5 if k.startswith(prefix)]
+
+    activities = {}
+    risks = {}
+    for obs, place in (("ACTH", "household"), ("ACTP", "primary"), ("ACTS", "secondary"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
+        activities[place] = np.array([s[obs].iloc[-1] for s in samples])
+        if place == "environment":
+            count = sum(1 for n in g.nodes if g.nodes[n]["type"] == "person") - 1
+        else:
+            count = sum(nx.degree(g, n) for n in g.nodes if g.nodes[n]["type"] == place)
+        risks[place] = activities[place]/count
+    total = np.array([sum(activities[p] for p in activities)])
+    activities = { p: d/total for p, d in activities.items() }
+
+    support = np.linspace(0.0,0.49,50) + 0.005
+
+    for p in list(activities):
+        ah, _ = np.histogram(activities[p], bins=50, range=(0,0.5), density=True)
+        rh, _ = np.histogram(risks[p], bins=50, range=(0,0.5), density=True)
+        activities[p] = ah
+        risks[p] = rh
+
+    return support, activities, risks
+
+@cli.command(name="write_stamford_act")
+@click.option("--output", "-o", default="rule-activities.tsv", help="Output filename")
+@click.option("--summary", "-s", default=False, is_flag=True, help="Write summary statistics")
+@click.pass_context
+def write_stamford_act(ctx, output, summary):
+    """
+    Stamford-hill specific simulation plots
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    if "store" not in ctx.obj:
+        click.secho(f"No data store specified. Cannot tell where to store results.", fg="red")
+        sys.exit(-1)
+
+    support, activities, risks = stamford_act(g, ctx.obj.store, ctx.obj.prefix)
+
+    if summary:
+        cols = ["place",
+                "act_mean", "act_std", "act_p25", "act_p500", "act_p975",
+                "risk_mean", "risk_std", "risk_p25", "risk_p500", "risk_p975",
+                ]
+        rows = []
+        for p in activities:
+            aw   = activities[p]
+            am    = (support*aw).sum()
+            astd  = np.sqrt(((support-aw)**2 * support).sum())
+            acs   = np.cumsum(aw)
+            ap25  = 100*np.interp(2.5,  acs - 0.5*aw, support)
+            ap500 = 100*np.interp(50,   acs - 0.5*aw, support)
+            ap975 = 100*np.interp(97.5, acs - 0.5*aw, support)
+
+            rw = risks[p]
+            rm    = (support*rw).sum()
+            rstd  = np.sqrt(((support-rw)**2 * support).sum())
+            rcs   = np.cumsum(rw)
+            rp25  = 100*np.interp(2.5,  rcs - 0.5*rw, support)
+            rp500 = 100*np.interp(50,   rcs - 0.5*rw, support)
+            rp975 = 100*np.interp(97.5, rcs - 0.5*rw, support)
+
+            row = [p, am, astd, ap25, ap500, ap975, rm, rstd, rp25, rp500, rp975]
+            rows.append(row)
+        data = np.vstack(rows)
+
+    else:
+        cols = ["x"]
+        rows = [support]
+        for p in activities:
+            cols.append(f"{p}_act")
+            rows.append(activities[p])
+            cols.append(f"{p}_risk")
+            rows.append(risks[p])
+        data = np.vstack(rows).T
+
+
+    df = pd.DataFrame(data, columns=cols)
+    df.to_csv(output, sep="\t", index=False)
+
 @cli.command(name="plot_stamford_act")
 @click.option("--output", "-o", default="rule-activities.png", help="Output filename")
 @click.pass_context
@@ -442,36 +529,22 @@ def plot_stamford_act(ctx, output):
         click.secho(f"No data store specified. Cannot tell where to store results.", fg="red")
         sys.exit(-1)
 
-    h5 = ctx.obj.store
-    samples = [h5[k] for k in h5 if k.startswith(ctx.obj.prefix)]
-
-    activities = {}
-    for obs, place in (("ACTH", "household"), ("ACTP", "primary"), ("ACTS", "secondary"), ("ACTG", "synagogue"), ("ACTM", "mikvah"), ("ACTE", "environment")):
-        activities[place] = np.array([s[obs].iloc[-1] for s in samples])
-    total = np.array([sum(activities[p] for p in activities)])
+    support, activities, risks = stamford_act(g, ctx.obj.store, ctx.obj.prefix)
 
     fig, (ax1, ax2) = plt.subplots(2,1, figsize=(12,8))
-    for i, (p, data) in enumerate(activities.items()):
-        ax1.hist((data/total)[0], np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False, label=place_labels[p])
-        if p == "environment":
-            count = sum(1 for n in g.nodes if g.nodes[n]["type"] == "person") - 1
-        else:
-            count = sum(nx.degree(g, n) for n in g.nodes if g.nodes[n]["type"] == p)
-        ax2.hist(data/count, np.linspace(0,0.5,51), color=colours[i], alpha=0.5, edgecolor=colours[i], density=False)
+    for i, p in enumerate(activities):
+        ax1.bar(support, activities[p], width=0.01, color=colours[i], alpha=0.5, edgecolor=colours[i], label=place_labels[p])
+        ax2.bar(support, risks[p], width=0.01, color=colours[i], alpha=0.5, edgecolor=colours[i])
 
-    ax1.set_ylabel("Number of simulations")
+    ax1.set_ylabel("Probability density")
     ax1.set_title("Total share of community transmission", loc="right", y=1.05)
-    ax2.set_ylabel("Number of simulations")
+    ax2.set_ylabel("Probability density")
     ax2.set_title("Relative transmission risk", loc="right", y=1.05)
     ax1.legend(ncol=3, loc="lower left", bbox_to_anchor=(0, 1.05))
     fig.tight_layout()
     fig.savefig(output)
 
-@cli.command(name="plot_stamford_wass")
-@click.option("--output", "-o", default="wasserstein.png", help="Output filename")
-@click.argument("snapshots", nargs=-1)
-@click.pass_context
-def plot_stamford_wass(ctx, output, snapshots):
+def stamford_wass(snapshots):
     """
     Stamford-hill specific simulation plots -- Wasserstein barycentre
     """
@@ -493,12 +566,9 @@ def plot_stamford_wass(ctx, output, snapshots):
             hist = hist/hist.sum()
             attacks.setdefault(size, []).append(hist)
 
-    edges = np.linspace(0,10,11)
-
-    fig, axes = plt.subplots(2,5, figsize=(12,6))
+    wass = {}
     for size in sorted(attacks):
         print(f"doing size {size}")
-        ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
 
         A = np.vstack(attacks[size]).T
         if size == 1:
@@ -524,7 +594,23 @@ def plot_stamford_wass(ctx, output, snapshots):
             # wasserstein
             reg = 1e-3
             bary_wass = ot.bregman.barycenter(A, M, reg, weights)
+        wass[size] = bary_wass
 
+    return empirical, wass
+
+@cli.command(name="plot_stamford_wass")
+@click.option("--output", "-o", default="wasserstein.png", help="Output filename")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def plot_stamford_wass(ctx, output, snapshots):
+    empirical, wass = stamford_wass(snapshots)
+    edges = np.linspace(0,10,11)
+
+    fig, axes = plt.subplots(2,5, figsize=(12,6))
+    for size in sorted(wass):
+        if size > 10: continue
+        ax = axes[ int((size-1) / 5) ][ (size-1) % 5]
+        bary_wass = wass[size]
         ax.bar(edges+0.25, bary_wass, width=0.4, color=colours[1], alpha=0.5, edgecolor=colours[1], label="Simulated")
 
     for size in sorted(empirical):
@@ -544,6 +630,25 @@ def plot_stamford_wass(ctx, output, snapshots):
 
     fig.tight_layout()
     fig.savefig(output)
+
+@cli.command(name="write_stamford_wass")
+@click.option("--output", "-o", default="wasserstein.tsv", help="Output filename")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def write_stamford_wass(ctx, output, snapshots):
+    empirical, wass = stamford_wass(snapshots)
+
+    cols = ["count"]
+    rows = [np.array(list(range(0,11)))]
+    for size in range(1, 11):
+        cols.append(f"e{size}")
+        rows.append(empirical[size])
+        cols.append(f"s{size}")
+        rows.append(wass[size])
+
+    data = np.vstack(rows).T
+    df = pd.DataFrame(data, columns=cols)
+    df.to_csv(output, sep="\t", index=False)
 
 @cli.command(name="plot_stamford_cens")
 @click.option("--output", "-o", default="censoring", help="Output filename")
@@ -643,12 +748,10 @@ def plot_stamford_demo(ctx, output):
     fig.tight_layout()
     fig.savefig(output)
 
-@cli.command(name="plot_stamford_intro")
-@click.argument("snapshots", nargs=-1)
-@click.option("--output", "-o", "output", default="stamford-intros.png",
-              help="Output filename")
-@click.pass_context
-def plot_stamford_intro(ctx, snapshots, output):
+## get histogram of introductions, returns a dictionary with
+## keys being place type and values being a list of histograms
+## of introductions
+def stamford_intro(ctx, snapshots):
     ## place_labels has "environment" in place of "community"
     sources = list(place_labels)[:-1] + ["community", "init", "none"]
     intros = {}
@@ -658,19 +761,28 @@ def plot_stamford_intro(ctx, snapshots, output):
         for h in graph.households(g):
             members = list(nx.neighbors(g, h))
             if len(members) > 10: continue
-            counts = {}
+            counts = { s: 0 for s in sources }
             for m in members:
                 source = g.nodes[m].get("i", "none")
                 if source == "houshold": source = "household" ## TODO remove typeo kludge
-                counts[source] = counts.setdefault(source, 0) + 1
+                counts[source] = counts[source] + 1
 
             assert sum(counts.values()) == len(members)
             if counts.get("init", 0) + counts.get("none", 0) == len(members): ## don't count households with no infections
                 continue
             for s, c in counts.items():
-                count = np.zeros(10)
-                count[len(members)-1] = c
-                intros.setdefault(s, []).append(count)
+                intros.setdefault(s, {}).setdefault(len(members), []).append(c)
+
+    return intros
+
+@cli.command(name="plot_stamford_intro")
+@click.argument("snapshots", nargs=-1)
+@click.option("--output", "-o", "output", default="stamford-intros.png",
+              help="Output filename")
+@click.pass_context
+def plot_stamford_intro(ctx, snapshots, output):
+    sources = list(place_labels)[:-1] + ["community", "init", "none"]
+    intros = stamford_intro(ctx, snapshots)
 
     rows, cols = 3, 2
     fig, axes = plt.subplots(rows, cols, figsize=(10,7))
@@ -682,10 +794,10 @@ def plot_stamford_intro(ctx, snapshots, output):
         ax = axes[row][col]
 
         ## list of arrays of counts by household size
-        source_counts = np.vstack(intros[sources[src]])
-        avg_counts = np.mean(source_counts, axis=0)
-        p5_counts = np.percentile(source_counts, 5, axis=0)
-        p95_counts = np.percentile(source_counts, 95, axis=0)
+        source_counts = intros[sources[src]]
+        avg_counts = np.array([np.mean(source_counts[i]) for i in sorted(source_counts)])
+        p5_counts = np.array([np.percentile(source_counts[i], 5) for i in sorted(source_counts)])
+        p95_counts = np.array([np.percentile(source_counts[i], 95) for i in sorted(source_counts)])
         confidence = np.vstack([avg_counts-p5_counts,p95_counts-avg_counts])
 
         label = place_labels[sources[src]] if sources[src] != "community" else sources[src]
@@ -700,10 +812,34 @@ def plot_stamford_intro(ctx, snapshots, output):
     fig.tight_layout()
     fig.savefig(output)
 
-@cli.command(name="compute_stamford_dist")
+@cli.command(name="write_stamford_intro")
+@click.argument("snapshots", nargs=-1)
+@click.option("--output", "-o", "output", default="stamford-intros.png",
+              help="Output filename")
+@click.pass_context
+def write_stamford_intro(ctx, snapshots, output):
+    """
+    Write out introduction data.
+    """
+    sources = list(place_labels)[:-1] + ["community", "init", "none"]
+    intros = stamford_intro(ctx, snapshots)
+    columns = [ "count" ]
+    rows = [ list(range(0,11)) ]
+    for src in range(len(intros)):
+        label = sources[src] if sources[src] != "community" else sources[src]
+        source_counts = intros[sources[src]]
+        for i in sorted(source_counts):
+            hist, _ = np.histogram(source_counts[i], bins=11, range=(0,10), density=True)
+            columns.append(f"{label}_{i}")
+            rows.append(hist)
+
+    df = pd.DataFrame(np.vstack(rows).T, columns=columns)
+    df.to_csv(output, sep="\t", index=False)
+
+@cli.command(name="write_stamford_dist")
 @click.argument("snapshots", nargs=-1)
 @click.pass_context
-def compute_stamford_dist(ctx, snapshots):
+def write_stamford_dist(ctx, snapshots):
     """
     Stamford-hill specific simulation plots -- distance measure
     """
