@@ -814,7 +814,7 @@ def plot_stamford_intro(ctx, snapshots, output):
 
 @cli.command(name="write_stamford_intro")
 @click.argument("snapshots", nargs=-1)
-@click.option("--output", "-o", "output", default="stamford-intros.png",
+@click.option("--output", "-o", "output", default="stamford-intros.tsv",
               help="Output filename")
 @click.pass_context
 def write_stamford_intro(ctx, snapshots, output):
@@ -836,6 +836,36 @@ def write_stamford_intro(ctx, snapshots, output):
     df = pd.DataFrame(np.vstack(rows).T, columns=columns)
     df.to_csv(output, sep="\t", index=False)
 
+@cli.command(name="write_stamford_multi")
+@click.argument("snapshots", nargs=-1)
+@click.option("--output", "-o", "output", default="stamford-multi.tsv",
+              help="Output filename")
+@click.pass_context
+def write_stamford_multi(ctx, snapshots, output):
+    """
+    Write out multiple introduction data.
+    """
+    sources = list(place_labels)[:-1] + ["community", "init"]
+    intros = stamford_intro(ctx, snapshots)
+    sizes = list(range(1,11))
+    cols = ["size", "hh_mean", "hh_std", "hh_25", "hh_200", "hh_500", "hh_800", "hh_975"]
+    rows = []
+    for size in sizes:
+        counts  = { src:np.vstack(intros[src][size]) for src in sources }
+        totals  = sum(counts.values())[:,0]
+        hhold   = np.array(counts["household"])[:,0] / totals
+
+        row = [size, np.mean(hhold), np.std(hhold),
+               np.percentile(hhold, 2.5),
+               np.percentile(hhold, 20),
+               np.percentile(hhold, 50),
+               np.percentile(hhold, 80),
+               np.percentile(hhold, 97.5)]
+        rows.append(row)
+
+    df = pd.DataFrame(np.vstack(rows), columns=cols)
+    df.to_csv(output, sep="\t", index=False)
+
 @cli.command(name="write_stamford_dist")
 @click.argument("snapshots", nargs=-1)
 @click.pass_context
@@ -850,3 +880,50 @@ def write_stamford_dist(ctx, snapshots):
         distances.append(dist)
 
     print(np.mean(distances), np.std(distances))
+
+
+@cli.command(name="write_stamford_net")
+@click.pass_context
+def write_stamford_net(ctx):
+    """
+    Stamford-hill specific simulation plots -- network statistics
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    components = list(nx.connected_components(g))
+    people = [[p for p in c if g.nodes[p]["bipartite"] == 0] for c in components]
+    places = [[p for p in c if g.nodes[p]["bipartite"] == 1] for c in components]
+    people_sizes = [len(p) for p in people]
+    place_sizes  = [len(p) for p in places]
+    click.echo(f"connected components: {len(components)}")
+    click.echo(f"component sizes (people median {np.median(people_sizes)}): {sorted(people_sizes)})")
+    click.echo(f"component sizes (places median {np.median(place_sizes)}): {sorted(place_sizes)})")
+
+    largest = np.argmax(people_sizes)
+    h = nx.bipartite.projected_graph(g, people[largest])
+    path_lengths = sum([[len(p)-1 for p in pd.values()] for _, pd in nx.shortest_paths.all_pairs_shortest_path(h)], [])
+    click.echo(f"shortest paths (people): mean={np.mean(path_lengths)} median={np.median(path_lengths)} max={np.max(path_lengths)}")
+
+    k = nx.bipartite.projected_graph(g, places[largest])
+    bcent = sorted([ (k,v) for (k,v) in nx.betweenness_centrality(k).items()], key=lambda x: -x[1])
+    bc10 = [p for p,v in bcent if v > 0.1]
+    bc5 = [p for p,v in bcent if v > 0.05]
+    bc1 = [p for p,v in bcent if v > 0.01]
+
+    def count(l):
+        counts = { k:0 for k in place_labels }
+        for p in l:
+            counts[k.nodes[p]["type"]] += 1
+        return counts
+
+    click.echo(f"betweenness centrality: {len(bc10)} > 10% {count(bc10)}")
+    click.echo(f"betweenness centrality: {len(bc5)} > 5% {count(bc5)}")
+    click.echo(f"betweenness centrality: {len(bc1)} > 1% {count(bc1)}")
+    click.echo(f"betweenness centrality: top 10")
+    for p, b in bcent[:10]:
+        click.echo(f"\t{b}\t{k.nodes[p]}")
