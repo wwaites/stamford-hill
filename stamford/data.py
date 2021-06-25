@@ -133,8 +133,12 @@ def add_people(g, places, data, minimal=True):
         else:
             attrs = _depanda(p)
 
-        if attrs["age"] < 13:
-            attrs["lifecycle"] = "child"
+        if attrs["age"] < 6:
+            attrs["lifecycle"] = "preschool"
+        elif attrs["age"] < 12:
+            attrs["lifecycle"] = "primary"
+        elif attrs["age"] < 18:
+            attrs["lifecycle"] = "secondary"
         else:
             attrs["lifecycle"] = "adult"
 

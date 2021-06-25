@@ -5,6 +5,7 @@ import networkx as nx
 import sys
 import inspect
 import ot
+from math import ceil
 from stamford import graph
 from stamford.network import emsar, attack_histograms
 from netabc.utils import envelope
@@ -650,6 +651,61 @@ def write_stamford_wass(ctx, output, snapshots):
     df = pd.DataFrame(data, columns=cols)
     df.to_csv(output, sep="\t", index=False)
 
+@cli.command(name="write_stamford_sero")
+@click.option("--output", "-o", default="seropositivity.tsv", help="Output filename")
+@click.option("--empirical", "-e", default=False, is_flag=True, help="Empirical data")
+@click.argument("snapshots", nargs=-1)
+@click.pass_context
+def write_stamford_sero(ctx, output, empirical, snapshots):
+    if empirical:
+        positive = lambda g,n: g.nodes[n].get("positive", False)
+    else:
+        positive = lambda g,n: g.nodes[n].get("c", "x") in "eir"
+    dists = { "male": [], "female": [], "all": [] }
+    for s in snapshots:
+        g = nx.read_graphml(s)
+        males, females = [], []
+        pmales, pfemales = [], []
+        for n in g:
+            if g.nodes[n]["type"] != "person": continue
+            if not g.nodes[n].get("serology"): continue
+            if g.nodes[n]["sex"] == "male":
+                males.append(g.nodes[n]["age"])
+                if positive(g, n):
+                    pmales.append(g.nodes[n]["age"])
+            else:
+                females.append(g.nodes[n]["age"])
+                if positive(g, n):
+                    pfemales.append(g.nodes[n]["age"])
+        hmales, me = np.histogram(males, bins=20, range=(0, 100))
+        hmales = np.hstack([hmales[:14], [hmales[14:].sum()]])
+        hpmales, me = np.histogram(pmales, bins=20, range=(0, 100))
+        hpmales = np.hstack([hpmales[:14], [hpmales[14:].sum()]])
+        hfemales, fe = np.histogram(females, bins=20, range=(0, 100))
+        hfemales = np.hstack([hfemales[:14], [hfemales[14:].sum()]])
+        hpfemales, fe = np.histogram(pfemales, bins=20, range=(0, 100))
+        hpfemales = np.hstack([hpfemales[:14], [hpfemales[14:].sum()]])
+        dists["male"].append(hpmales/hmales)
+        dists["female"].append(hpfemales/hfemales)
+        dists["all"].append( (hpmales+hpfemales) / (hmales + hfemales) )
+
+    data = np.vstack([
+        np.linspace(2.5,72.5, 15),
+        np.mean(dists["male"], axis=0),
+        np.percentile(dists["male"], 2.5, axis=0),
+        np.percentile(dists["male"], 97.5, axis=0),
+        np.mean(dists["female"], axis=0),
+        np.percentile(dists["female"], 2.5, axis=0),
+        np.percentile(dists["female"], 97.5, axis=0),
+        np.mean(dists["all"], axis=0),
+        np.percentile(dists["all"], 2.5, axis=0),
+        np.percentile(dists["all"], 97.5, axis=0),
+    ]).T
+    cols = ["age", "male_mean", "male_low", "male_high", "female_mean", "female_low", "female_high", "all_mean", "all_low", "all_high"]
+
+    df = pd.DataFrame(data, columns=cols)
+    df.to_csv(output, sep="\t", index=False)
+
 @cli.command(name="plot_stamford_cens")
 @click.option("--output", "-o", default="censoring", help="Output filename")
 @click.pass_context
@@ -701,6 +757,61 @@ def plot_stamford_demo(ctx, output):
 
     fig, (axs, axa) = plt.subplots(2, len(place_labels), figsize=(10,5))
 
+    (sex_hist, sex_edges), (age_hist, age_edges) = stamford_demo(g)
+
+    for k, kind in enumerate(place_labels):
+        axs[k].set_title(place_labels[kind], fontdict={"fontsize": 8})
+        axs[k].bar(sex_edges, sex_hist[k], width=0.1, color=colours[k], alpha=0.5, edgecolor=colours[k])
+        axs[k].set_yticks([])
+        if k == 0:
+            axs[k].set_ylabel("Fraction male")
+
+    for k, kind in enumerate(place_labels):
+        axa[k].bar(age_edges, age_hist[k], width=5, color=colours[k], alpha=0.5, edgecolor=colours[k])
+        axa[k].set_yticks([])
+        axa[k].set_xticks([0,20,40,60,80])
+        if k == 0:
+            axa[k].set_ylabel("Mean age distribution")
+
+    fig.tight_layout()
+    fig.savefig(output)
+
+@cli.command(name="write_stamford_demo")
+@click.option("--output", "-o", "output", default="stamford-demographics.tsv",
+              help="Output filename")
+@click.pass_context
+def write_stamford_demo(ctx, output):
+    """
+    Generate plots about Stamford Hill
+    """
+    if "graph" not in ctx.obj:
+        click.secho(f"No population graph specified.", fg="red")
+        sys.exit(-1)
+
+    args = [v for k,v in ctx.obj.fixed.items() if k in inspect.getfullargspec(ctx.obj.graph).args]
+    g = ctx.obj.graph(*args)
+
+    (sex_hist, sex_edges), (age_hist, age_edges) = stamford_demo(g)
+
+    rows = [sex_edges]
+    cols = ["count"]
+    for k, kind in enumerate(place_labels):
+        rows.append(sex_hist[k])
+        cols.append(place_labels[kind].replace(" ", "_") + "_sex")
+    df = pd.DataFrame(np.array(rows).T, columns=cols)
+    df.to_csv(f"sex-{output}", sep="\t", index=False)
+
+    rows = [age_edges]
+    cols = ["count"]
+    for k, kind in enumerate(place_labels):
+        rows.append(age_hist[k])
+        cols.append(place_labels[kind].replace(" ", "_") + "_age")
+    df = pd.DataFrame(np.array(rows).T, columns=cols)
+    df.to_csv(f"age-{output}", sep="\t", index=False)
+
+def stamford_demo(g):
+    sex_hist = {}
+    sex_edges = np.linspace(0,10,11)
     for k, kind in enumerate(place_labels):
         if kind == "environment":
             males = [sum([g.nodes[p]["sex"] == "male" for p in g if g.nodes[p]["type"] == "person"])]
@@ -715,14 +826,11 @@ def plot_stamford_demo(ctx, output):
         males, females = nz_males, nz_females
         #print(kind, males + females)
 
-        edges = np.linspace(0,1,11)
         hist, _ = np.histogram(males/(males + females), bins=11, density=True, range=(0, 1))
-        axs[k].set_title(place_labels[kind], fontdict={"fontsize": 8})
-        axs[k].bar(edges, hist, width=0.1, color=colours[k], alpha=0.5, edgecolor=colours[k])
-        axs[k].set_yticks([])
-        if k == 0:
-            axs[k].set_ylabel("Fraction male")
+        sex_hist[k] = (hist)
 
+    age_hist = {}
+    age_edges = np.linspace(0,80,17)
     for k, kind in enumerate(place_labels):
         if kind == "environment":
             ages = [g.nodes[p]["age"] for p in g if g.nodes[p]["type"] == "person"]
@@ -738,15 +846,9 @@ def plot_stamford_demo(ctx, output):
                 ages.append(np.mean(ns))
 
         hist, _ = np.histogram(ages, bins=17, density=True, range=(0,80))
-        edges = np.linspace(0,80,17)
-        axa[k].bar(edges, hist, width=5, color=colours[k], alpha=0.5, edgecolor=colours[k])
-        axa[k].set_yticks([])
-        axa[k].set_xticks([0,20,40,60,80])
-        if k == 0:
-            axa[k].set_ylabel("Mean age distribution")
+        age_hist[k] = hist
 
-    fig.tight_layout()
-    fig.savefig(output)
+    return (sex_hist, sex_edges), (age_hist, age_edges)
 
 ## get histogram of introductions, returns a dictionary with
 ## keys being place type and values being a list of histograms
@@ -848,7 +950,7 @@ def write_stamford_multi(ctx, snapshots, output):
     sources = list(place_labels)[:-1] + ["community", "init"]
     intros = stamford_intro(ctx, snapshots)
     sizes = list(range(1,11))
-    cols = ["size", "hh_mean", "hh_std", "hh_25", "hh_200", "hh_500", "hh_800", "hh_975"]
+    cols = ["size", "hh_mean", "hh_std", "hh_25", "hh_100", "hh_200", "hh_300", "hh_400", "hh_500", "hh_600", "hh_700", "hh_800", "hh_900", "hh_975"]
     rows = []
     for size in sizes:
         counts  = { src:np.vstack(intros[src][size]) for src in sources }
@@ -857,9 +959,15 @@ def write_stamford_multi(ctx, snapshots, output):
 
         row = [size, np.mean(hhold), np.std(hhold),
                np.percentile(hhold, 2.5),
+               np.percentile(hhold, 10),
                np.percentile(hhold, 20),
+               np.percentile(hhold, 30),
+               np.percentile(hhold, 40),
                np.percentile(hhold, 50),
+               np.percentile(hhold, 60),
+               np.percentile(hhold, 70),
                np.percentile(hhold, 80),
+               np.percentile(hhold, 90),
                np.percentile(hhold, 97.5)]
         rows.append(row)
 
@@ -883,8 +991,10 @@ def write_stamford_dist(ctx, snapshots):
 
 
 @cli.command(name="write_stamford_net")
+@click.option("--output", "-o", "output", default="stamford-netstats.tsv",
+              help="Output filename")
 @click.pass_context
-def write_stamford_net(ctx):
+def write_stamford_net(ctx, output):
     """
     Stamford-hill specific simulation plots -- network statistics
     """
@@ -904,26 +1014,71 @@ def write_stamford_net(ctx):
     click.echo(f"component sizes (people median {np.median(people_sizes)}): {sorted(people_sizes)})")
     click.echo(f"component sizes (places median {np.median(place_sizes)}): {sorted(place_sizes)})")
 
-    largest = np.argmax(people_sizes)
-    h = nx.bipartite.projected_graph(g, people[largest])
-    path_lengths = sum([[len(p)-1 for p in pd.values()] for _, pd in nx.shortest_paths.all_pairs_shortest_path(h)], [])
-    click.echo(f"shortest paths (people): mean={np.mean(path_lengths)} median={np.median(path_lengths)} max={np.max(path_lengths)}")
+    def netstats(a, what):
+        click.secho(f"statistics about {what} (size = {len(a)})", fg="green")
+        path_lengths = sum([[len(p)-1 for p in pd.values()] for _, pd in nx.shortest_paths.all_pairs_shortest_path(a)], [])
+        sp_mean = np.mean(path_lengths)
+        sp_med  = np.median(path_lengths)
+        sp_max  = np.max(path_lengths)
+        click.echo(f"shortest paths ({what}): mean={sp_mean} median={sp_med} max={sp_max}")
 
-    k = nx.bipartite.projected_graph(g, places[largest])
-    bcent = sorted([ (k,v) for (k,v) in nx.betweenness_centrality(k).items()], key=lambda x: -x[1])
-    bc10 = [p for p,v in bcent if v > 0.1]
-    bc5 = [p for p,v in bcent if v > 0.05]
-    bc1 = [p for p,v in bcent if v > 0.01]
+        bcent = sorted([ (k,v) for (k,v) in nx.betweenness_centrality(a, weight="weight").items()], key=lambda x: -x[1])
+        bc10 = [p for p,v in bcent if v > 0.1]
+        bc5 = [p for p,v in bcent if v > 0.05]
+        bc1 = [p for p,v in bcent if v > 0.01]
 
-    def count(l):
+        click.echo(f"betweenness centrality: {len(bc10)} > 10% {count(a, bc10)}")
+        click.echo(f"betweenness centrality: {len(bc5)} > 5% {count(a, bc5)}")
+        click.echo(f"betweenness centrality: {len(bc1)} > 1% {count(a, bc1)}")
+        click.echo(f"betweenness centrality: max = {bcent[0][1]}")
+        return [sp_mean, sp_med, sp_max], bcent
+
+    def count(a, l):
         counts = { k:0 for k in place_labels }
+        counts["person"] = 0
         for p in l:
-            counts[k.nodes[p]["type"]] += 1
+            if "type" not in a.nodes[p]:
+                click.secho(f"node {p} missing type {a.nodes[p]}", fg="red")
+                continue
+            counts[a.nodes[p]["type"]] += 1
         return counts
 
-    click.echo(f"betweenness centrality: {len(bc10)} > 10% {count(bc10)}")
-    click.echo(f"betweenness centrality: {len(bc5)} > 5% {count(bc5)}")
-    click.echo(f"betweenness centrality: {len(bc1)} > 1% {count(bc1)}")
-    click.echo(f"betweenness centrality: top 10")
-    for p, b in bcent[:10]:
-        click.echo(f"\t{b}\t{k.nodes[p]}")
+    rows = []
+    largest = np.argmax(people_sizes)
+    people = people[largest]
+    places = places[largest]
+    npeo = ceil(len(people)/100) ## number of people to remove in each step
+    npla = ceil(len(places)/100) ## number of places to remove in each step
+    h = nx.bipartite.projected_graph(g, people)
+    k = nx.bipartite.projected_graph(g, places)
+    ih, ik = 0, 0
+    while len(h) + len(k) > 2:
+        if len(k) > 1:
+            pla, placent = netstats(k, f"places {len(k)}")
+            placounts = count(k, [n for n,_ in placent[:npla]])
+            placounts = [placounts[l] for l in place_labels]
+            k.remove_node(placent[0][0])
+            largest_cc = max(nx.connected_components(k), key=len)
+            k = nx.subgraph(k, largest_cc).copy()
+            ik += 1
+        else:
+            pla = [0,0,0]
+            placent = [[0,0]]
+            placounts = [0 for l in place_labels]
+
+        if len(h) > 1:
+            peo, peocent = netstats(h, f"people {len(h)}")
+            h.remove_node(peocent[0][0])
+            largest_cc = max(nx.connected_components(h), key=len)
+            h = nx.subgraph(h, largest_cc).copy()
+            ih += 1
+        else:
+            peo = [0,0,0]
+            peocent = [[0,0]]
+
+        rows.append([ih, len(h)] + peo + [peocent[0][1]] + [ik, len(k)] + pla + [placent[0][1]] + placounts)
+
+    cols = ["peo_rem", "peo_size", "peo_mean", "peo_med", "peo_dia", "peo_cent", "pla_rem", "pla_size", "pla_mean", "pla_med", "pla_dia", "pla_cent"] + list(place_labels.keys())
+    df = pd.DataFrame(rows, columns=cols)
+    df.to_csv(output, sep="\t", index=False)
+

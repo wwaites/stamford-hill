@@ -95,10 +95,38 @@ def degrees(g):
 
     return [hh_degs, primary_degs, secondary_degs, synagogue_degs, mikvah_degs]
 
+def minimise(g):
+    vertex_attrs = ["type"]
+    type_attrs = {
+        "household": ["enriched"],
+        "person": ["sex", "serology", "positive"]
+    }
+    def band(age):
+        if age > 70:
+            return 70 // 5
+        else:
+            return age // 5
+    h = nx.Graph()
+    for n in g:
+        attrs = {}
+        for a in vertex_attrs:
+            attrs[a] = g.nodes[n][a]
+        for a in type_attrs.get(g.nodes[n]["type"], []):
+            if a in g.nodes[n]:
+                attrs[a] = g.nodes[n][a]
+        if g.nodes[n]["type"] == "person":
+            attrs["age"] = band(g.nodes[n]["age"])
+        h.add_node(n, **attrs)
+    for (u,v) in g.edges:
+        if "household" in [g.nodes[u]["type"], g.nodes[v]["type"]]:
+            h.add_edge(u,v)
+    return h
+
 def command():
     parser = argparse.ArgumentParser("stamford_graph")
     parser.add_argument("survey", help="Data file (.zip) containing survey data downloaded from ODK")
     parser.add_argument("augment", help="Augment graph with serology data")
+    parser.add_argument("--minimal", action="store_true", default=False, help="Strip data to minimum")
     parser.add_argument("--maximal", action="store_true", default=False, help="Do not minimise output; store all annotations in the graph")
     parser.add_argument("--motifs", "-m", action="store_true", default=False, help="Generate a graph of household motifs")
     args = parser.parse_args()
@@ -109,6 +137,9 @@ def command():
 
     if args.motifs:
         g = household_motifs(g)
+
+    if args.minimal:
+        g = minimise(g)
 
     for line in nx.generate_graphml(g):
         print(line)

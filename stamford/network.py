@@ -60,6 +60,16 @@ class EMSAR(object):
             dist += wasserstein(u/u.sum(), v/v.sum())
         return dist
 
+def sus(g, p):
+    """
+    Age-dependent susceptibility
+    """
+    age = g.nodes[p]["age"]
+    if age < 6: return 0.25
+    elif age < 12: return 0.5
+    elif age < 18: return 0.75
+    else: return 1.0
+
 def attack_histograms(g, t, ref = None):
     """
     Calculate attack rate and censorship histogram for
@@ -125,6 +135,14 @@ def attack_histograms(g, t, ref = None):
     return attacks
 
 emsar = EMSAR()
+
+def sbal(g):
+    """
+    Return a measure of sex balance
+    """
+    males = len([n for n in g if g.nodes[n]["type"] == "person" and g.nodes[n]["sex"] == "male" and g.nodes[n].get("c", "x") in "eir"])
+    females = len([n for n in g if g.nodes[n]["type"] == "person" and g.nodes[n]["sex"] == "female" and g.nodes[n].get("c", "x") in "eir"])
+    return abs(males - females) / (males + females)
 
 def process_serology(g):
     """

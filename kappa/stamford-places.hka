@@ -37,8 +37,8 @@
 //                         -> household(loc[1]),    person(c{e}, lifecycle{child}, loc[1]) @ beta_c*inf(g,p)
 //'infection_household_adult' household(loc[1])[p], person(c{s}, lifecycle{adult}, loc[1]) \
 //                         -> household(loc[1]),    person(c{e}, lifecycle{adult}, loc[1]) @ beta_a*inf(g,p)
-'infection_household' household(loc[1])[p], person(c{s}, i{none}, loc[1]) \
-                   -> household(loc[1]),    person(c{e}, i{household}, loc[1]) @ beta_h*inf(g,p)
+'infection_household' household(loc[1])[p], person(c{s}, i{none}, loc[1])[q] \
+                   -> household(loc[1]),    person(c{e}, i{household}, loc[1]) @ beta_h*inf(g,p)*sus(g,q)
 
 'infection_synagogue' synagogue(loc[1])[p], person(c{s}, i{none}, loc[1]) \
                    -> synagogue(loc[1]),    person(c{e}, i{synagogue}, loc[1]) @ beta_g*inf(g,p)
@@ -56,8 +56,18 @@
 // simulator to not enumerate all possible embeddings but
 // simply to choose agents on the left-hand side at random
 // as with a petri net
-'infection_environment' person(c{s}, i{none}), person(c{i}) \
-                     *> person(c{e}, i{community}), person(c{i}) @ beta_e/1942
+//'infection_environment' person(c{s}, i{none}), person(c{i}) \
+//                     *> person(c{e}, i{community}), person(c{i}) @ beta_e/1942
+'infection_c_preschool' person(c{s}, i{none}, lifecycle{child}), person(c{i}) \
+                     *> person(c{e}, i{community}, lifecycle{child}), person(c{i}) @ s_preschool*beta_e/1942
+'infection_c_primary' person(c{s}, i{none}, lifecycle{primary}), person(c{i}) \
+                   *> person(c{e}, i{community}, lifecycle{primary}), person(c{i}) @ s_primary*beta_e/1942
+'infection_c_secondary' person(c{s}, i{none}, lifecycle{secondary}), person(c{i}) \
+                     *> person(c{e}, i{community}, lifecycle{secondary}), person(c{i}) @ s_secondary*beta_e/1942
+'infection_c_adult' person(c{s}, i{none}, lifecycle{adult}), person(c{i}) \
+                 *> person(c{e}, i{community}, lifecycle{adult}), person(c{i}) @ beta_e/1942
+'infection_c_female' person(c{s}, i{none}, lifecycle{adult}, sex{female}), person(c{i}) \
+                  *> person(c{e}, i{community}, lifecycle{adult}, sex{female}), person(c{i}) @ beta_f/1942
 
 %obs: S |person(c{s})|
 %obs: E |person(c{e})|
@@ -67,24 +77,25 @@
 %obs: Fi |person(sex{female}, c{i})|
 %obs: Mr |person(sex{male}, c{r})|
 %obs: Fr |person(sex{female}, c{r})|
-%obs: HSAR sar(g, "household")
-%obs: GSAR sar(g, "synagogue")
-%obs: PSAR sar(g, "primary")
-%obs: SSAR sar(g, "secondary")
-%obs: MSAR sar(g, "mikvah")
-%obs: DHSAR emsar(g, "household")
-%obs: DGSAR emsar(g, "synagogue")
-%obs: DPSAR emsar(g, "primary")
-%obs: DSSAR emsar(g, "secondary")
-%obs: DMSAR emsar(g, "mikvah")
+//%obs: HSAR sar(g, "household")
+//%obs: GSAR sar(g, "synagogue")
+//%obs: PSAR sar(g, "primary")
+//%obs: SSAR sar(g, "secondary")
+//%obs: MSAR sar(g, "mikvah")
+//%obs: DHSAR emsar(g, "household")
+//%obs: DGSAR emsar(g, "synagogue")
+//%obs: DPSAR emsar(g, "primary")
+//%obs: DSSAR emsar(g, "secondary")
+//%obs: DMSAR emsar(g, "mikvah")
 //%obs: ACTC  activity(infection_household_child)
 //%obs: ACTA  activity(infection_household_adult)
+%obs: Dist emsar(g, "household")+sbal(g)
 %obs: ACTH  activity(infection_household)
 %obs: ACTG  activity(infection_synagogue)
 %obs: ACTP  activity(infection_primary)
 %obs: ACTS  activity(infection_secondary)
 %obs: ACTM  activity(infection_mikvah)
-%obs: ACTE  activity(infection_environment)
+%obs: ACTE  activity(infection_c_preschool)+activity(infection_c_primary)+activity(infection_c_secondary)+activity(infection_c_adult)+activity(infection_c_female)
 
 // unlike regular kappa, these values are the fraction of the
 // nodes in the supplied graph that should have their initial
