@@ -3,6 +3,7 @@ __all__ = ["build_graph"]
 from stamford.graph import people, household
 import networkx as nx
 import numpy as np
+from math import floor, ceil
 import sys
 from scipy.stats import wasserstein_distance as wasserstein
 
@@ -238,10 +239,10 @@ def split_graph(template_graph, graph_split):
             assert g.nodes[bigplace]["bipartite"] == 1
 
             members   = list(nx.neighbors(g, bigplace))
-            chunks    = int(len(members)/pctile) + 1
-            chunksize = int(len(members)/chunks)
+            chunks    = int(ceil(len(members)/pctile))
+            chunksize = int(ceil(len(members)/chunks))
 
-            for _ in range(chunks - 1):
+            for _ in range(int(chunks) - 1):
                 newplace = nid
                 nid += 1
                 attrs = g.nodes[bigplace].copy()
@@ -257,6 +258,11 @@ def split_graph(template_graph, graph_split):
 #                click.secho(f"\t{newplace} is size {nx.degree(g, newplace)}", fg="yellow")
 
 #            click.secho(f"\tnow {bigplace} is size {nx.degree(g, bigplace)}", fg="yellow")
+
+        places = [n for n in g.nodes if g.nodes[n]["type"] == kind]
+        degree_dict = nx.degree(g, places)
+        for p in places:
+            assert degree_dict[p] <= ceil(pctile), f"{p} has degree {degree_dict[p]} > {ceil(pctile)}"
 
     return g
 
