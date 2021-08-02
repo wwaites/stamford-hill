@@ -1082,3 +1082,51 @@ def write_stamford_net(ctx, output):
     df = pd.DataFrame(rows, columns=cols)
     df.to_csv(output, sep="\t", index=False)
 
+@cli.command(name="write_stamford_peak")
+@click.option("--format", "-f", "fmt", default="trajs-%0.2f.h5", help="Formatting string")
+@click.option("--output", "-o", default="stamford-peak.tsv",
+              help="Output filename")
+@click.option("--prefix", "-p", default="traj", help="Prefix in HDF5 files")
+@click.option("--relative", "-r", is_flag=True, default=True, help="Relative to largest value")
+@click.argument("datasets", type=float, nargs=-1)
+@click.pass_context
+def write_stamford_peak(ctx, fmt, output, prefix, relative, datasets):
+    """
+    Write out peak epidemic data.
+    """
+    if len(datasets) == 0:
+        click.secho("Require a list of dataset identifiers", fg="red")
+        sys.exit(-1)
+
+    data = []
+    for ds in datasets:
+        fname = fmt % ds
+        h5 = pd.HDFStore(fname, "r")
+        samples = [h5[k] for k in h5 if k.startswith("/" + prefix + "/")]
+        if len(samples) == 0:
+            click.secho(f"Datastore {fname} has no samples with prefix {prefix}")
+            sys.exit(-1)
+        avg, std = envelope(samples)
+        i = np.argmax(avg["I"])
+        data.append([
+            ds, avg["I"].iloc[i], std["I"].iloc[i], avg["R"].iloc[-1], std["R"].iloc[-1]
+        ])
+        h5.close()
+
+    df = pd.DataFrame(data, columns=["dataset", "ipeak", "istd", "rfin", "rstd"])
+    if relative:
+        i = np.argmax(df["ipeak"])
+        ipeak = df["ipeak"].iloc[i]
+        istd = df["istd"].iloc[i]
+        irel = df["ipeak"]/ipeak
+        ierr = np.sqrt( (df["istd"]/df["ipeak"])**2 + (istd/ipeak)**2 ) * irel
+
+        i = np.argmax(df["rfin"])
+        rfin = df["rfin"].iloc[i]
+        rstd = df["rstd"].iloc[i]
+        rrel = df["rfin"]/rfin
+        rerr = np.sqrt( (df["rstd"]/df["rfin"])**2 + (rstd/rfin)**2 ) * rrel
+        rel = pd.DataFrame( np.array([irel, ierr, rrel, rerr]).T, columns=["irelpeak", "irelstd", "rrelfin", "rrelstd"])
+        df = pd.concat([df, rel], axis=1)
+
+    df.to_csv(output, sep="\t", index=False)
