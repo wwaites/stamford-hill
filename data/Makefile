@@ -3,8 +3,9 @@ MODEL=../kappa/stamford-places.hka
 ABCDB=stamford.db
 UABCDB=stamford-uniform.db
 TRAJS=stamford.h5
-SAMPLES=1024
+SAMPLES?=1024
 POPS?=8
+TMAX?=90
 
 ## susceptibility of children
 s_preschool=0.25
@@ -29,6 +30,32 @@ all:
 	make PCTILE=0.7 split split_plots split_data || true
 	make PCTILE=0.6 split split_plots split_data || true
 	make PCTILE=0.5 split split_plots split_data || true
+	make PCTILE=0.4 split split_plots split_data || true
+	make PCTILE=0.3 split split_plots split_data || true
+	make PCTILE=0.2 split split_plots split_data || true
+	make PCTILE=0.1 split split_plots split_data || true
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=1.0 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.9 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.8 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.7 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.6 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.5 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.4 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.3 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.2 place place_data
+	make TMAX=180 SAMPLES=1024 PLACE=primary PCTILE=0.1 place place_data
+	make PLACE=primary peaks
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=1.0 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.9 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.8 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.7 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.6 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.5 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.4 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.3 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.2 place place_data
+	make TMAX=180 SAMPLES=128 PLACE=synagogue PCTILE=0.1 place place_data
+	make PLACE=synagogue peaks
 
 plots: censoring.png test-distributions.png rule-activities.png wasserstein.png introductions.png epidemic-S-E-I-R.png rule-activities-tight.png wasserstein-tight.png introductions-tight.png epidemic-tight-S-E-I-R.png
 data: introductions.tsv introductions-tight.tsv multi.tsv multi-tight.tsv rule-activities.tsv rule-activities-summary.tsv rule-activities-tight.tsv rule-activities-summary-tight.tsv wasserstein.tsv seropositivity.tsv wasserstein-tight.tsv seropositivity-tight.tsv age-distributions.tsv
@@ -39,7 +66,7 @@ minimal-${GRAPH}: stamford_hill_survey.zip combined_data.csv
 	stamford_graph $^ --minimal > $@
 
 ${UABCDB}: ${GRAPH} ${MODEL}
-	netabc -l 90 \
+	netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -56,7 +83,7 @@ ${UABCDB}: ${GRAPH} ${MODEL}
 			-u beta_m 0.0 0.5
 
 ${ABCDB}: ${UABCDB}
-	netabc -l 90 \
+	netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -70,7 +97,7 @@ ${ABCDB}: ${UABCDB}
 
 split_fit: split-${PCTILE}-${ABCDB}
 split-${PCTILE}-${ABCDB}: ${ABCDB}
-	netabc -l 90 \
+	netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -83,7 +110,7 @@ split-${PCTILE}-${ABCDB}: ${ABCDB}
 
 ${TRAJS}: ${ABCDB}
 	rm -f snapshots/stamford-snapshot-*
-	time netabc -l 90 \
+	time netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -96,7 +123,7 @@ ${TRAJS}: ${ABCDB}
 
 tight.h5: ${ABCDB}
 	rm -f snapshots/tight-snapshot*
-	time netabc -l 90 \
+	time netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -110,7 +137,7 @@ tight.h5: ${ABCDB}
 sensitivity: sensitivity-${SCALE}.h5
 sensitivity-${SCALE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
 	rm -f snapshots/sensitivity-${SCALE}-snapshot*
-	time netabc -l 90 \
+	time netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -124,7 +151,7 @@ sensitivity-${SCALE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
 close: close-${PLACE}-${SCALE}.h5
 close-${PLACE}-${SCALE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
 	rm -f snapshots/close-${PLACE}-${SCALE}-snapshot*
-	time netabc -l 90 \
+	time netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -135,10 +162,10 @@ close-${PLACE}-${SCALE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
 		netkappa -f ${MODEL} -s snapshots/close-${PLACE}-${SCALE}-snapshot \
 		run -n ${SAMPLES}
 
-split: split-${PCTILE}.h5
-split-${PCTILE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
-	rm -f snapshots/split-${PCTILE}-snapshot*
-	time netabc -l 90 \
+split: split-${PCTILE}${SUFFIX}.h5
+split-${PCTILE}${SUFFIX}.h5: ${GRAPH} ${MODEL} ${ABCDB}
+	rm -f snapshots/split-${PCTILE}${SUFFIX}-snapshot*
+	time netabc -l ${TMAX} \
 		-f s_preschool ${s_preschool} \
 		-f s_primary ${s_primary} \
 		-f s_secondary ${s_secondary} \
@@ -146,7 +173,22 @@ split-${PCTILE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
 		store -d $@ -p net \
 		graph -f ${GRAPH} \
 		stamford -x synagogue ${PCTILE} -x primary ${PCTILE} \
-		netkappa -f ${MODEL} -s snapshots/split-${PCTILE}-snapshot \
+		netkappa -f ${MODEL} -s snapshots/split-${PCTILE}${SUFFIX}-snapshot \
+		run -n ${SAMPLES}
+
+
+place: place-${PCTILE}-${PLACE}.h5
+place-${PCTILE}-${PLACE}.h5: ${GRAPH} ${MODEL} ${ABCDB}
+	rm -f snapshots/place-${PCTILE}-${PLACE}-snapshot*
+	time netabc -l ${TMAX} \
+		-f s_preschool ${s_preschool} \
+		-f s_primary ${s_primary} \
+		-f s_secondary ${s_secondary} \
+		abc -d sqlite:///${ABCDB} \
+		store -d $@ -p net \
+		graph -f ${GRAPH} \
+		stamford -x ${PLACE} ${PCTILE} \
+		netkappa -f ${MODEL} -s snapshots/place-${PCTILE}-${PLACE}-snapshot \
 		run -n ${SAMPLES}
 
 net-final-activity.png: ${TRAJS}
@@ -181,7 +223,7 @@ multi.tsv: ${TRAJS}
 	netabc write_stamford_multi -o $@ snapshots/stamford-snapshot*.graphml
 
 epidemic-S-E-I-R.png: ${TRAJS}
-	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic
+	netabc -l ${TMAX} store -r -d $< -p net plot -o S,E,I,R --output epidemic
 
 test-distributions.png: ${GRAPH}
 	netabc graph -f ${GRAPH} stamford plot_stamford_wass -o $@
@@ -212,7 +254,7 @@ multi-tight.tsv: tight.h5
 	netabc write_stamford_multi -o $@ snapshots/tight-snapshot*.graphml
 
 epidemic-tight-S-E-I-R.png: tight.h5
-	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-tight
+	netabc -l ${TMAX} store -r -d $< -p net plot -o S,E,I,R --output epidemic-tight
 
 sensitivity_plots: rule-activities-${SCALE}.png wasserstein-${SCALE}.png introductions-${SCALE}.png epidemic-sensitivity-${SCALE}-S-E-I-R.png
 rule-activities-${SCALE}.png: sensitivity-${SCALE}.h5
@@ -222,7 +264,7 @@ wasserstein-${SCALE}.png: sensitivity-${SCALE}.h5
 introductions-${SCALE}.png: sensitivity-${SCALE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/sensitivity-${SCALE}-snapshot*.graphml
 epidemic-sensitivity-${SCALE}-S-E-I-R.png: sensitivity-${SCALE}.h5
-	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-sensitivity-${SCALE}
+	netabc -l ${TMAX} store -r -d $< -p net plot -o S,E,I,R --output epidemic-sensitivity-${SCALE}
 
 sensitivity_data: introductions-${SCALE}.tsv multi-${SCALE}.tsv wasserstein-${SCALE}.tsv seropositivity-${SCALE}.tsv rule-activities-${SCALE}.tsv rule-activities-summary-${SCALE}.tsv
 introductions-${SCALE}.tsv: sensitivity-${SCALE}.h5
@@ -246,7 +288,7 @@ wasserstein-${PLACE}-${SCALE}.png: close-${PLACE}-${SCALE}.h5
 introductions-close-${PLACE}-${SCALE}.png: close-${PLACE}-${SCALE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/close-${PLACE}-${SCALE}-snapshot*.graphml
 epidemic-close-${PLACE}-${SCALE}-S-E-I-R.png: close-${PLACE}-${SCALE}.h5
-	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-close-${PLACE}-${SCALE}
+	netabc -l ${TMAX} store -r -d $< -p net plot -o S,E,I,R --output epidemic-close-${PLACE}-${SCALE}
 
 close_data: introductions-close-${PLACE}-${SCALE}.tsv multi-close-${PLACE}-${SCALE}.tsv rule-activities-${PLACE}-${SCALE}.tsv rule-activities-summary-${PLACE}-${SCALE}.tsv  wasserstein-close-${PLACE}-${SCALE}.tsv seropositivity-close-${PLACE}-${SCALE}.tsv
 introductions-close-${PLACE}-${SCALE}.tsv: close-${PLACE}-${SCALE}.h5
@@ -270,7 +312,7 @@ wasserstein-split-${PCTILE}.png: split-${PCTILE}.h5
 introductions-split-${PCTILE}.png: split-${PCTILE}.h5
 	netabc plot_stamford_intro -o $@ snapshots/split-${PCTILE}-snapshot*.graphml
 epidemic-split-${PCTILE}-S-E-I-R.png: split-${PCTILE}.h5
-	netabc -l 90 store -r -d $< -p net plot -o S,E,I,R --output epidemic-split-${PCTILE}
+	netabc -l ${TMAX} store -r -d $< -p net plot -o S,E,I,R --output epidemic-split-${PCTILE}
 
 split_data: introductions-split-${PCTILE}.tsv multi-split-${PCTILE}.tsv rule-activities-split-${PCTILE}.tsv rule-activities-summary-split-${PCTILE}.tsv wasserstein-split-${PCTILE}.tsv seropositivity-split-${PCTILE}.tsv
 introductions-split-${PCTILE}.tsv: split-${PCTILE}.h5
@@ -285,6 +327,20 @@ wasserstein-split-${PCTILE}.tsv: split-${PCTILE}.h5
 	netabc graph -f ${GRAPH} stamford -x synagogue ${PCTILE} -x primary ${PCTILE} write_stamford_wass -o $@ snapshots/split-${PCTILE}-snapshot-*.graphml
 seropositivity-split-${PCTILE}.tsv: split-${PCTILE}.h5
 	netabc graph -f ${GRAPH} stamford -x synagogue ${PCTILE} -x primary ${PCTILE} write_stamford_sero -o $@ snapshots/split-${PCTILE}-snapshot-*.graphml
+
+place_data: introductions-place-${PCTILE}-${PLACE}.tsv multi-place-${PCTILE}-${PLACE}.tsv rule-activities-place-${PCTILE}-${PLACE}.tsv rule-activities-summary-place-${PCTILE}-${PLACE}.tsv wasserstein-place-${PCTILE}-${PLACE}.tsv seropositivity-place-${PCTILE}-${PLACE}.tsv
+introductions-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc write_stamford_intro -o $@ snapshots/place-${PCTILE}-${PLACE}-snapshot*.graphml
+multi-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc write_stamford_multi -o $@ snapshots/place-${PCTILE}-${PLACE}-snapshot*.graphml
+rule-activities-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc store -r -d $< -p net graph -f ${GRAPH} stamford -x ${PLACE} ${PCTILE} write_stamford_act -o $@
+rule-activities-summary-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc store -r -d $< -p net graph -f ${GRAPH} stamford -x ${PLACE} ${PCTILE} write_stamford_act -o $@ -s
+wasserstein-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc graph -f ${GRAPH} stamford -x ${PLACE} ${PCTILE} write_stamford_wass -o $@ snapshots/place-${PCTILE}-${PLACE}-snapshot-*.graphml
+seropositivity-place-${PCTILE}-${PLACE}.tsv: place-${PCTILE}-${PLACE}.h5
+	netabc graph -f ${GRAPH} stamford -x ${PLACE} ${PCTILE} write_stamford_sero -o $@ snapshots/place-${PCTILE}-${PLACE}-snapshot-*.graphml
 
 split_distances.tsv:
 	rm -f $@
@@ -313,3 +369,7 @@ age-distributions.tsv: ${GRAPH}
 
 seropositivity-empirical.tsv: ${GRAPH}
 	netabc write_stamford_sero -e -o $@ $^
+
+peaks: ${PLACE}-peak.tsv
+${PLACE}-peak.tsv:
+	netabc write_stamford_peak -o $@ -f 'place-%0.1f-${PLACE}.h5' -p net 1.0 0.9 0.8 0.7 0.6 0.5 0.4 0.3 0.2 0.1
